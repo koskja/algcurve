@@ -1,8 +1,8 @@
 TARGET = prog
 LIBS = -lm -lc
 CC = clang++
-CFLAGS = -g -std=c++23 -Wall
-LFLAGS = -g
+CFLAGS = -g -std=c++23 -Wall -O3
+LFLAGS = -g -O3
 
 # Source directories
 SRC_DIRS = .
@@ -32,7 +32,7 @@ $(OBJ_DIR)/%.o: %.cpp | $(OBJ_DIR)
 .PRECIOUS: $(TARGET) $(OBJECTS)
 
 $(TARGET): $(OBJECTS)
-	$(CC) $(LFLAGS) $(OBJECTS) -Wall $(LIBS) -o $@ -v
+	$(CC) $(LFLAGS) $(OBJECTS) -Wall $(LIBS) -o $@
 
 clean:
 	-rm -rf $(OBJ_DIR)

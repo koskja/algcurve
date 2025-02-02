@@ -10,7 +10,7 @@
 
 #include "polynomial.hpp"
 #include "input.hpp"
-
+#include "image.hpp"
 static std::vector<char> var_names = {'x', 'y', 'z', 'w'};
 char get_var_name(usize i) {
     if (i < var_names.size()) {
@@ -73,10 +73,46 @@ Polynomial<double, NVARS> parse_expression(std::string_view expression) {
     return parse_ast<NVARS>(std::move(root));
 }
 
+
+
 int main() {
-    std::string expression = "x(x^2+y^2-2y*1)(x^2+y^2-2y*2)(x^2+y^2-2y*4)(x^2+y^2-2y*8)(x^2+y^2-2y*16)(x^2+y^2-2y*32)(x^2+y^2-2y*64)(x^2+y^2-2y*128)";
-    auto p0 = parse_expression<2>(expression);
-    std::cout << p0 << std::endl;
+    // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
+    // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
+    // std::string expression = "(x^2+y^2-1)^3-x^2y^3";
+    // std::string expression = "(x^2+y^2)^5-(x^4-6x^2y^2+y^4)^2";
+    // std::string expression = "2.8x^2(x^2(2.5x^2+y^2-2)+1.2y^2(y(3y-0.75)-6.0311)+3.09)+0.98y^2((y^2-3.01)y^2+3)-1.005";
+    std::string expression1, expression2;
+    std::cin >> expression1 >> expression2;
+    auto p1 = parse_expression<2>(expression1);
+    auto p2 = parse_expression<2>(expression2);
+    auto num_steps = 100;
+    auto width = 1280;
+    auto height = 1280;
+    auto [x0, x1, y0, y1] = std::array{-2.0, 2.0, -2.0, 2.0};
+    for (usize i = 0; i < num_steps; ++i) {
+        auto lambda = (double)i / (num_steps - 1);
+        auto p = p1 * lambda + p2 * (1 - lambda);
+        auto img = Image<GrayscalePixel>(width, height);
+        auto to_plane = [&](usize px, usize py) {
+            double x = x0 + (x1 - x0) * px / (width - 1);
+            double y = y0 + (y1 - y0) * py / (height - 1);
+            return std::array{x, y};
+        };
+        auto soft_clamp = [](double v) {
+            return 1 - std::abs(std::atan(v * 100) / M_PI * 2);
+        };
+        for (usize y = 0; y < img.height; ++y) {
+            for (usize x = 0; x < img.width; ++x) {
+                auto plane_coords = to_plane(x, y);
+                auto pval = p.eval(plane_coords);
+                img(x, y).set_v(soft_clamp(pval));
+            }
+        }
+        std::string filename_fwd = "test" + std::format("{:04}", i) + ".bmp";
+        std::string filename_bwd = "test" + std::format("{:04}", num_steps * 2 - 1 - i) + ".bmp";
+        img.save_bmp(filename_fwd);
+        img.save_bmp(filename_bwd);
+    }
     return 0;
 }
 
