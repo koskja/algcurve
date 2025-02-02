@@ -35,8 +35,8 @@ std::vector<Token> tokenize(std::string_view expression) {
             case '-': type = TokenType::Sub; break;
             case '*': type = TokenType::Mul; break;
             case '^': type = TokenType::Pow; break;
-            case '(': type = TokenType::LPar; break;
-            case ')': type = TokenType::RPar; break;
+            case '(': case '[': case '{': type = TokenType::LPar; break;
+            case ')': case ']': case '}': type = TokenType::RPar; break;
             default: onechar = 0; break;
         }
         if (onechar) {

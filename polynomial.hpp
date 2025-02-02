@@ -106,6 +106,13 @@ struct Polynomial {
         }
         return result;
     }
+    Polynomial<T, NVARS> operator*(const T& scalar) const {
+        Polynomial<T, NVARS> result = *this;
+        for (auto& [monomial, coefficient] : result.coefficients) {
+            coefficient *= scalar;
+        }
+        return result;
+    }
     Polynomial<T, NVARS> pow(exp_t exponent) const {
         assert(exponent >= 0 && "Exponent must be non-negative");
         if (exponent == 0) {
@@ -182,23 +189,24 @@ struct Polynomial {
         while (it != end) {
             const auto& [monomial, coefficient] = *it;
             if (coefficient == 0) {
+                ++it;
                 continue;
+            }
+            if (it != coefficients.begin() && coefficient > 0) {
+                result += "+";
             }
             if (coefficient == std::floor(coefficient)) {
                 result += std::to_string((long long)coefficient);
                 if (monomial != Monomial<NVARS>()) {
-                    result += " * " + std::string(monomial);
+                    result += "*" + std::string(monomial);
                 }
             } else {
                 result += std::to_string(coefficient);
                 if (monomial != Monomial<NVARS>()) {
-                    result += " * " + std::string(monomial);
+                    result += "*" + std::string(monomial);
                 }
             }
             ++it;
-            if (it != end) {
-                result += " + ";
-            }
         }
         return result;
     }
