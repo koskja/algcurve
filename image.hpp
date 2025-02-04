@@ -40,6 +40,7 @@ struct Image {
     usize height;
     std::vector<P> data;
 
+    Image() = default;
     Image(usize width, usize height) : width(width), height(height), data(width * height) {}
     Image(usize width, usize height, const P& pixel) : width(width), height(height), data(width * height, pixel) {}
     Image(usize width, usize height, std::vector<P> data) : width(width), height(height), data(data) {}
@@ -57,66 +58,64 @@ struct Image {
     }
 
     P& operator()(usize x, usize y) {
+        assert(x < width && y < height);
         return data[y * width + x];
     }
 
     const P& operator()(usize x, usize y) const {
+        assert(x < width && y < height);
         return data[y * width + x];
     }
 
     static constexpr u32 info_header_size = 40;
     static constexpr u32 file_header_size = 14;
 
-    // This is a hack to allow writing to the stream without having to pass it around.
-    // It naturally is not thread-safe.
-    std::ostream* os = nullptr;
     template<typename T>
-    void write(T value) {
-        os->write(reinterpret_cast<const char*>(&value), sizeof(T));
+    void write(std::ostream& os, T value) {
+        os.write(reinterpret_cast<const char*>(&value), sizeof(T));
     }
 
-    void write_info_header() {
-        write<u32>(info_header_size); // sizeof BITMAPINFOHEADER
-        write<u32>(width);
-        write<u32>(height);
-        write<u16>(1); // planes
-        write<u16>(24); // bits per pixel
-        write<u32>(0); // compression
-        write<u32>(0); // image size; 0 for uncompressed
-        write<u32>(512); // x resolution
-        write<u32>(512); // y resolution
-        write<u32>(0); // colors used; default
-        write<u32>(0); // important colors; default
+    void write_info_header(std::ostream& os) {
+        write<u32>(os, info_header_size); // sizeof BITMAPINFOHEADER
+        write<u32>(os, width);
+        write<u32>(os, height);
+        write<u16>(os, 1); // planes
+        write<u16>(os, 24); // bits per pixel
+        write<u32>(os, 0); // compression
+        write<u32>(os, 0); // image size; 0 for uncompressed
+        write<u32>(os, 512); // x resolution
+        write<u32>(os, 512); // y resolution
+        write<u32>(os, 0); // colors used; default
+        write<u32>(os, 0); // important colors; default
     }
 
-    void write_bmp() {
-        os->write("BM", 2);
-        write<u32>(file_header_size + info_header_size + data.size() * 3); // file size
-        write<u32>(0); // reserved
-        write<u32>(file_header_size + info_header_size); // raster data offset
-        write_info_header();
+    void write_bmp(std::ostream& os) {
+        os.write("BM", 2);
+        write<u32>(os, file_header_size + info_header_size + data.size() * 3); // file size
+        write<u32>(os, 0); // reserved
+        write<u32>(os, file_header_size + info_header_size); // raster data offset
+        write_info_header(os);
         for (isize y = height - 1; y >= 0; --y) {
             for (isize x = 0; x < width; ++x) {
                 auto& pixel = (*this)(x, y);
-                write<u8>(pixel.b() * 255);
-                write<u8>(pixel.g() * 255);
-                write<u8>(pixel.r() * 255);
+                write<u8>(os, pixel.b() * 255);
+                write<u8>(os, pixel.g() * 255);
+                write<u8>(os, pixel.r() * 255);
             }
         }
     }
 
     void save_bmp(std::string_view filename) {
-        std::ofstream os_(filename.data(), std::ios::binary);
-        os = &os_;
-        if (!os_) {
+        std::ofstream os(filename.data(), std::ios::binary);
+        if (!os) {
             throw std::runtime_error("Failed to open file for writing: " + std::string(filename));
         }
-        write_bmp();
-        if (!os_) {
+        write_bmp(os);
+        if (!os) {
             throw std::runtime_error("Failed to write BMP data");
         }
-        os_.close();
-        if (!os_) {
+        os.close();
+        if (!os) {
             throw std::runtime_error("Failed to close file");
         }
     }

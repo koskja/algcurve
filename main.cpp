@@ -7,10 +7,13 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <map>
 
 #include "polynomial.hpp"
 #include "input.hpp"
 #include "image.hpp"
+#include "thread.hpp"
+
 static std::vector<char> var_names = {'x', 'y', 'z', 'w'};
 char get_var_name(usize i) {
     if (i < var_names.size()) {
@@ -73,7 +76,54 @@ Polynomial<double, NVARS> parse_expression(std::string_view expression) {
     return parse_ast<NVARS>(std::move(root));
 }
 
+struct ImageParams {
+    std::function<std::array<double, 2>(usize, usize)> to_plane;
+    std::function<double(double)> soft_clamp;
+    usize width, height;
+};
 
+struct AnimationParams {
+    ImageParams image;
+    Polynomial<double, 2> p1, p2;
+    std::span<double> lambdas;
+};
+
+Image<GrayscalePixel> render_image(Polynomial<double, 2> p, ImageParams params) {
+    auto img = Image<GrayscalePixel>(params.width, params.height);
+    for (usize y = 0; y < img.height; ++y) {
+        for (usize x = 0; x < img.width; ++x) {
+            auto plane_coords = params.to_plane(x, y);
+            auto pval = p.eval(plane_coords);
+            img(x, y).set_v(params.soft_clamp(pval));
+        }
+    }
+    return img;
+}
+
+std::vector<Image<GrayscalePixel>> render_images(AnimationParams& params) {
+    std::function<Image<GrayscalePixel>(double)> render_lambda = [&](double lambda) {
+        auto p = params.p1 * lambda + params.p2 * (1 - lambda);
+        return render_image(p, params.image);
+    };
+    return parallel_map(render_lambda, std::span(params.lambdas));
+}
+
+template <typename P>
+double image_difference(Image<P>& left, Image<P>& right) {
+    assert(left.width == right.width && left.height == right.height);
+    double sum = 0.0;
+    for (usize y = 0; y < left.height; ++y) {
+        for (usize x = 0; x < left.width; ++x) {
+            auto& l = left(x, y);
+            auto& r = right(x, y);
+            double dr = l.r() - r.r();
+            double dg = l.g() - r.g(); 
+            double db = l.b() - r.b();
+            sum += dr*dr + dg*dg + db*db;
+        }
+    }
+    return sum / left.width / left.height;
+}
 
 int main() {
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
@@ -85,34 +135,77 @@ int main() {
     std::cin >> expression1 >> expression2;
     auto p1 = parse_expression<2>(expression1);
     auto p2 = parse_expression<2>(expression2);
-    auto num_steps = 100;
-    auto width = 1280;
-    auto height = 1280;
-    auto [x0, x1, y0, y1] = std::array{-2.0, 2.0, -2.0, 2.0};
-    for (usize i = 0; i < num_steps; ++i) {
-        auto lambda = (double)i / (num_steps - 1);
-        auto p = p1 * lambda + p2 * (1 - lambda);
-        auto img = Image<GrayscalePixel>(width, height);
-        auto to_plane = [&](usize px, usize py) {
-            double x = x0 + (x1 - x0) * px / (width - 1);
-            double y = y0 + (y1 - y0) * py / (height - 1);
-            return std::array{x, y};
+    usize width = 1440;
+    usize height = 1440;
+    auto plane_height = 4.0;
+    auto aspect_ratio = (double)width / height;
+    auto [x0, x1, y0, y1] = std::array{-plane_height * aspect_ratio / 2, plane_height * aspect_ratio / 2, -plane_height / 2, plane_height / 2};
+    auto to_plane = [&](usize px, usize py) {
+        double x = x0 + (x1 - x0) * px / (width - 1);
+        double y = y0 + (y1 - y0) * py / (height - 1);
+        return std::array{x, y};
+    };
+    auto soft_clamp = [](double v) -> double {
+        return 1 - std::abs(std::atan(v * 100) / M_PI * 2);
+    };
+    auto img_params = ImageParams{to_plane, soft_clamp, width, height};
+    std::map<double, Image<GrayscalePixel>> interpolation_steps = std::map<double, Image<GrayscalePixel>>();
+    interpolation_steps.insert({0.0, render_image(p2, img_params)});
+    interpolation_steps.insert({1.0, render_image(p1, img_params)});
+    std::vector<std::pair<double, double>> candidate_intervals;
+    candidate_intervals.push_back({0.0, 1.0});
+    const auto max_distance = 0.005;
+    while (!candidate_intervals.empty()) {
+        auto new_candidates = std::vector<std::pair<double, double>>();
+        auto to_render = std::vector<double>();
+        std::function<double(std::pair<double, double>)> f = [&](std::pair<double, double> interval) -> double {
+            auto [left, right] = interval;
+            auto l_img_iter = interpolation_steps.find(left);
+            auto r_img_iter = interpolation_steps.find(right);
+            assert(l_img_iter != interpolation_steps.end() && r_img_iter != interpolation_steps.end());
+            auto& l_img = l_img_iter->second;
+            auto& r_img = r_img_iter->second;
+            auto distance = image_difference(l_img, r_img);
+            return distance;
         };
-        auto soft_clamp = [](double v) {
-            return 1 - std::abs(std::atan(v * 100) / M_PI * 2);
-        };
-        for (usize y = 0; y < img.height; ++y) {
-            for (usize x = 0; x < img.width; ++x) {
-                auto plane_coords = to_plane(x, y);
-                auto pval = p.eval(plane_coords);
-                img(x, y).set_v(soft_clamp(pval));
+        auto distances = parallel_map(f, std::span(candidate_intervals));
+        for (usize i = 0; i < candidate_intervals.size(); ++i) {
+            auto [left, right] = candidate_intervals[i];
+            auto distance = distances[i];
+            if (distance > max_distance && right - left > 1e-14) {
+                auto midpoint = (left + right) / 2;
+                to_render.push_back(midpoint);
+                new_candidates.emplace_back(left, midpoint);
+                new_candidates.emplace_back(midpoint, right);
             }
         }
-        std::string filename_fwd = "test" + std::format("{:04}", i) + ".bmp";
-        std::string filename_bwd = "test" + std::format("{:04}", num_steps * 2 - 1 - i) + ".bmp";
-        img.save_bmp(filename_fwd);
-        img.save_bmp(filename_bwd);
+        auto ani_params = AnimationParams { img_params, p1, p2, std::span(to_render) };
+        auto new_images = render_images(ani_params);
+        for (usize i = 0; i < to_render.size(); ++i) {
+            std::pair<double, Image<GrayscalePixel>> kv = std::pair(to_render[i], std::move(new_images[i]));
+            interpolation_steps.insert(kv);
+        }
+        candidate_intervals = new_candidates;
     }
+    auto num_images = interpolation_steps.size();
+    auto num_end_reps = 4;
+    std::vector<std::pair<std::string, Image<GrayscalePixel>&>> work_queue;
+    usize i = 0;
+    for (auto& [t, img] : interpolation_steps) {
+        auto num_reps = 1;
+        if (i == 0 || i == num_images + num_end_reps - 2) num_reps = num_end_reps;
+        for (usize j = 0; j < num_reps; ++j) {
+            std::string filename_fwd = "zzz" + std::format("{:04}", i) + ".bmp";
+            std::string filename_bwd = "zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
+            work_queue.push_back({filename_fwd, img});
+            work_queue.push_back({filename_bwd, img});
+            ++i;
+        }
+    }
+    parallel_for(work_queue.size(), [&](usize i) {
+        auto& [filename, img] = work_queue[i];
+        img.save_bmp(filename);
+    });
     return 0;
 }
 
