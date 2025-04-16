@@ -1,7 +1,7 @@
 TARGET = prog
 LIBS = -lm -lc
 CC = clang++
-CFLAGS = -g -std=c++23 -Wall -O3
+CFLAGS = -g -std=c++23 -Wall -O3 -march=native -ffast-math
 LFLAGS = -g -O3
 
 # Source directories

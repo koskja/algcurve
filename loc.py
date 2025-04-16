@@ -1,6 +1,6 @@
 import os
 
-emptiness_criterion_level = 0
+emptiness_criterion_level = 3
 
 def is_empty_line(line):
     stripped = line.strip()

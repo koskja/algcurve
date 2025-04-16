@@ -2,6 +2,9 @@
 #include <vector>
 #include <fstream>
 #include "core.hpp"
+#include <numeric>
+#include <array>
+#include "thread.hpp"
 
 struct Pixel {
     virtual ~Pixel() = default;
@@ -13,7 +16,7 @@ struct Pixel {
     virtual void set_b(double b) = 0;
 };
 
-struct RGBPixel : Pixel {
+struct Triplet : Pixel {
     double _r, _g, _b;
     double r() const override { return _r; }
     double g() const override { return _g; }
@@ -23,7 +26,7 @@ struct RGBPixel : Pixel {
     void set_b(double b) override { _b = b; }
 };
 
-struct GrayscalePixel : Pixel {
+struct Real : Pixel {
     double _v;
     double r() const override { return _v; }
     double g() const override { return _v; }
@@ -34,37 +37,69 @@ struct GrayscalePixel : Pixel {
     void set_v(double v) { _v = v; }
 };
 
-template<typename P = RGBPixel> requires std::derived_from<P, Pixel>
-struct Image {
-    usize width;
-    usize height;
+template<usize D, typename P = Triplet>
+struct Texture {
+    union {
+        std::array<usize, D> dims;
+        struct {
+            usize width, height, depth;
+        };
+    };
     std::vector<P> data;
+    Texture() = default;
+    template <typename... Args>
+    Texture<sizeof...(Args), P>(Args... args) {
+        dims = {static_cast<usize>(args)...};
+        data.resize(size());
+    }
 
-    Image() = default;
-    Image(usize width, usize height) : width(width), height(height), data(width * height) {}
-    Image(usize width, usize height, const P& pixel) : width(width), height(height), data(width * height, pixel) {}
-    Image(usize width, usize height, std::vector<P> data) : width(width), height(height), data(data) {}
-    template<typename Iter>
-    Image(usize width, usize height, Iter begin, Iter end) : width(width), height(height) {
-        this->overwrite(begin, end);
+    usize size() const {
+        return std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<usize>());
+    }
+
+    template<typename... Args>
+    constexpr usize to_index(Args... _args) const {
+        std::array<usize, D> args = {static_cast<usize>(_args)...};
+        usize index = 0;
+        usize multiplier = 1;
+        for (usize i = 0; i < D; ++i) {
+            index += args[i] * multiplier;
+            multiplier *= dims[i];
+        }
+        return index;
     }
 
     template<typename Iter>
     void overwrite(Iter begin, Iter end) {
-        if (std::distance(begin, end) != width * height) {
+        if (std::distance(begin, end) != size()) {
             throw std::runtime_error("Iterator range size does not match image dimensions");
         }
         std::copy(begin, end, data.begin());
     }
 
-    P& operator()(usize x, usize y) {
-        assert(x < width && y < height);
-        return data[y * width + x];
+    Texture<D+1, P> expand(usize ndimsize, std::function<void(P, std::span<P>)> func) {
+        Texture<D+1, P> result;
+        result.dims[0] = ndimsize;
+        for (usize i = 0; i < D; ++i) {
+            result.dims[i+1] = dims[i];
+        }
+        result.data.resize(result.size());
+        parallel_for(result.size(), [&](usize i) {
+            func(result.data[i], result.data.subspan(i * ndimsize, ndimsize));
+        }, 1);
+        return result;
     }
 
-    const P& operator()(usize x, usize y) const {
-        assert(x < width && y < height);
-        return data[y * width + x];
+    template<typename... Args>
+    P& operator()(Args... args) {
+        assert(to_index(args...) < size());
+        return data[to_index(args...)];
+    }
+
+    template<typename... Args>
+    const P& operator()(Args... args) const {
+        assert(to_index(args...) < size());
+        return data[to_index(args...)];
     }
 
     static constexpr u32 info_header_size = 40;
@@ -121,4 +156,11 @@ struct Image {
     }
 };
 
+template<typename P = Triplet>
+using Texture1D = Texture<1, P>;
 
+template<typename P = Triplet>
+using Texture2D = Texture<2, P>;
+
+template<typename P = Triplet>
+using Texture3D = Texture<3, P>;

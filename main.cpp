@@ -13,6 +13,7 @@
 #include "input.hpp"
 #include "image.hpp"
 #include "thread.hpp"
+#include "render.hpp"
 
 static std::vector<char> var_names = {'x', 'y', 'z', 'w'};
 char get_var_name(usize i) {
@@ -30,7 +31,7 @@ usize get_var_index(char c) {
     throw std::runtime_error("Variable not found");
 }
 
-template<usize NVARS>
+template <usize NVARS>
 Polynomial<double, NVARS> parse_ast(ASTNodePtrType node) {
     auto result = Polynomial<double, NVARS>();
     if (node->type == ASTNodeType::Const) {
@@ -76,20 +77,8 @@ Polynomial<double, NVARS> parse_expression(std::string_view expression) {
     return parse_ast<NVARS>(std::move(root));
 }
 
-struct ImageParams {
-    std::function<std::array<double, 2>(usize, usize)> to_plane;
-    std::function<double(double)> soft_clamp;
-    usize width, height;
-};
-
-struct AnimationParams {
-    ImageParams image;
-    Polynomial<double, 2> p1, p2;
-    std::span<double> lambdas;
-};
-
-Image<GrayscalePixel> render_image(Polynomial<double, 2> p, ImageParams params) {
-    auto img = Image<GrayscalePixel>(params.width, params.height);
+Texture2D<Real> render_image(Polynomial<double, 2> p, ImageParams params) {
+    auto img = Texture<2, Real>(params.width, params.height);
     for (usize y = 0; y < img.height; ++y) {
         for (usize x = 0; x < img.width; ++x) {
             auto plane_coords = params.to_plane(x, y);
@@ -100,16 +89,15 @@ Image<GrayscalePixel> render_image(Polynomial<double, 2> p, ImageParams params) 
     return img;
 }
 
-std::vector<Image<GrayscalePixel>> render_images(AnimationParams& params) {
-    std::function<Image<GrayscalePixel>(double)> render_lambda = [&](double lambda) {
+std::vector<Texture2D<Real>> render_images(AnimationParams& params) {
+    return parallel_map<Texture2D<Real>>([&](double lambda) {
         auto p = params.p1 * lambda + params.p2 * (1 - lambda);
         return render_image(p, params.image);
-    };
-    return parallel_map(render_lambda, std::span(params.lambdas));
+    }, std::span(params.lambdas));
 }
 
 template <typename P>
-double image_difference(Image<P>& left, Image<P>& right) {
+double image_difference(Texture2D<P>& left, Texture2D<P>& right) {
     assert(left.width == right.width && left.height == right.height);
     double sum = 0.0;
     for (usize y = 0; y < left.height; ++y) {
@@ -126,6 +114,13 @@ double image_difference(Image<P>& left, Image<P>& right) {
 }
 
 int main() {
+    auto p = parse_expression<4>("(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)");
+    auto xsub = parse_expression<4>("x+z");
+    auto ysub = parse_expression<4>("y+w");
+    p = p.substitute(0, xsub);
+    p = p.substitute(1, ysub);
+    std::cout << p << std::endl;
+    return 1;
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
     // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
     // std::string expression = "(x^2+y^2-1)^3-x^2y^3";
@@ -149,7 +144,7 @@ int main() {
         return 1 - std::abs(std::atan(v * 100) / M_PI * 2);
     };
     auto img_params = ImageParams{to_plane, soft_clamp, width, height};
-    std::map<double, Image<GrayscalePixel>> interpolation_steps = std::map<double, Image<GrayscalePixel>>();
+    std::map<double, Texture2D<Real>> interpolation_steps = std::map<double, Texture2D<Real>>();
     interpolation_steps.insert({0.0, render_image(p2, img_params)});
     interpolation_steps.insert({1.0, render_image(p1, img_params)});
     std::vector<std::pair<double, double>> candidate_intervals;
@@ -158,7 +153,7 @@ int main() {
     while (!candidate_intervals.empty()) {
         auto new_candidates = std::vector<std::pair<double, double>>();
         auto to_render = std::vector<double>();
-        std::function<double(std::pair<double, double>)> f = [&](std::pair<double, double> interval) -> double {
+        auto distances = parallel_map<double>([&](auto interval) {
             auto [left, right] = interval;
             auto l_img_iter = interpolation_steps.find(left);
             auto r_img_iter = interpolation_steps.find(right);
@@ -167,8 +162,7 @@ int main() {
             auto& r_img = r_img_iter->second;
             auto distance = image_difference(l_img, r_img);
             return distance;
-        };
-        auto distances = parallel_map(f, std::span(candidate_intervals));
+        }, std::span(candidate_intervals));
         for (usize i = 0; i < candidate_intervals.size(); ++i) {
             auto [left, right] = candidate_intervals[i];
             auto distance = distances[i];
@@ -182,14 +176,14 @@ int main() {
         auto ani_params = AnimationParams { img_params, p1, p2, std::span(to_render) };
         auto new_images = render_images(ani_params);
         for (usize i = 0; i < to_render.size(); ++i) {
-            std::pair<double, Image<GrayscalePixel>> kv = std::pair(to_render[i], std::move(new_images[i]));
+            std::pair<double, Texture2D<Real>> kv = std::pair(to_render[i], std::move(new_images[i]));
             interpolation_steps.insert(kv);
         }
         candidate_intervals = new_candidates;
     }
     auto num_images = interpolation_steps.size();
     auto num_end_reps = 4;
-    std::vector<std::pair<std::string, Image<GrayscalePixel>&>> work_queue;
+    std::vector<std::pair<std::string, Texture2D<Real>&>> work_queue;
     usize i = 0;
     for (auto& [t, img] : interpolation_steps) {
         auto num_reps = 1;

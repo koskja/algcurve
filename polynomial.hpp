@@ -1,6 +1,14 @@
 #pragma once
 
 #include "core.hpp"
+#include <array>
+#include <span>
+#include <unordered_map>
+#include <string>
+#include <cmath>
+#include <cassert>
+#include <iostream>
+#include <functional>
 
 #define PARENTHESIS_PRINT_MIN_EXPONENT 10
 
@@ -10,6 +18,8 @@ template <usize NVARS>
 struct Monomial {
     std::array<exp_t, NVARS> exponents;
     constexpr Monomial() : exponents() {}
+    template<typename... Args>
+    constexpr Monomial(Args... exponents) : exponents({static_cast<exp_t>(exponents)...}) {}
     constexpr exp_t degree() const {
         exp_t d = 0;
         for (exp_t e : exponents) {
@@ -37,6 +47,16 @@ struct Monomial {
             result *= std::pow(values[i], exponents[i]);
         }
         return result;
+    }
+    constexpr std::pair<Monomial<1>, Monomial<NVARS-1>> split(usize split_variable) const {
+        Monomial<1> outer = {this->exponents[split_variable]};
+        Monomial<NVARS-1> inner;
+        usize from, to;
+        for (from = 0, to = 0; from < NVARS; ++from) {
+            if (from == split_variable) continue;
+            inner.exponents[to++] = this->exponents[from];
+        }
+        return {outer, inner};
     }
     operator std::string() const {
         std::string result;
@@ -76,10 +96,32 @@ struct std::hash<Monomial<NVARS>> {
 template <typename T, usize NVARS>
 struct Polynomial {
     std::unordered_map<Monomial<NVARS>, T> coefficients;
-    constexpr T eval(std::span<const T> values) const {
+    usize max_degree() const {
+        usize max_degree = 0;
+        for (const auto& [monomial, _] : coefficients) {
+            max_degree = std::max(max_degree, monomial.degree());
+        }
+        return max_degree;
+    }
+    usize max_degree(usize variable) const {
+        usize max_degree = 0;
+        for (const auto& [monomial, _] : coefficients) {
+            max_degree = std::max(max_degree, monomial.exponents[variable]);
+        }
+        return max_degree;
+    }
+    T eval(std::span<const T> values) const {
         T result = 0;
         for (const auto& [monomial, coefficient] : coefficients) {
             result += coefficient * monomial.eval(values);
+        }
+        return result;
+    }
+    template<typename U>
+    Polynomial<U, NVARS> map(std::function<U(T)>& func) const {
+        Polynomial<U, NVARS> result;
+        for (const auto& [monomial, coefficient] : coefficients) {
+            result.coefficients[monomial] = func(coefficient);
         }
         return result;
     }
@@ -229,4 +271,40 @@ struct Polynomial {
         static_assert(sizeof...(Args) == NVARS, "Number of exponents must match number of variables");
         return coefficients.at(Monomial<NVARS>({static_cast<exp_t>(exponents)...}));
     }
+    Polynomial<Polynomial<T, NVARS-1>, 1> unnest_outer(usize outer_variable) const {
+        Polynomial<Polynomial<T, NVARS-1>, 1> result;
+        for (const auto& [monomial, coefficient] : coefficients) {
+            auto [outer, inner] = monomial.split(outer_variable);
+            result.coefficients[outer].coefficients[inner] += coefficient;
+        }
+        return result;
+    }
+    Polynomial<Polynomial<T, 1>, NVARS-1> unnest_inner(usize inner_variable) const {
+        Polynomial<Polynomial<T, 1>, NVARS-1> result;
+        for (const auto& [monomial, coefficient] : coefficients) {
+            auto [inner, outer] = monomial.split(inner_variable);
+            result.coefficients[outer].coefficients[inner] += coefficient;
+        }
+        return result;
+    }
 };
+
+template<typename T, usize NDIM>
+Polynomial<Polynomial<T, 2>, NDIM> merge_coeffs(Polynomial<Polynomial<Polynomial<T, 1>, 1>, NDIM> nested_poly) {
+    Polynomial<Polynomial<T, 2>, NDIM> result;
+    
+    for (const auto& [outer_monomial, inner_poly] : nested_poly.coefficients) {
+        for (const auto& [mid_monomial, innermost_poly] : inner_poly.coefficients) {
+            for (const auto& [inner_monomial, coeff] : innermost_poly.coefficients) {
+                // Create a 2D monomial from the two 1D monomials
+                Monomial<2> combined_monomial;
+                combined_monomial.exponents[0] = inner_monomial[0];
+                combined_monomial.exponents[1] = mid_monomial[0];
+                
+                result.coefficients[outer_monomial][combined_monomial] += coeff;
+            }
+        }
+    }
+    
+    return result;
+}
