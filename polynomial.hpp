@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core.hpp"
+#include <algorithm>
 #include <array>
 #include <span>
 #include <unordered_map>
@@ -118,7 +119,7 @@ struct Polynomial {
         return result;
     }
     template<typename U>
-    Polynomial<U, NVARS> map(std::function<U(T)>& func) const {
+    Polynomial<U, NVARS> map(const std::function<U(T)>& func) const {
         Polynomial<U, NVARS> result;
         for (const auto& [monomial, coefficient] : coefficients) {
             result.coefficients[monomial] = func(coefficient);
