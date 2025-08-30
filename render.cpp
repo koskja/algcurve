@@ -116,10 +116,14 @@ struct PreparedLattices {
             return PreparedPowers::from_range(start, end, size, max_deg);
         });
     }
-    Polynomial<double, 2> eval(usize granularity, Point<usize> at) {
+    Polynomial<double, 2> eval(usize granularity, Point<usize> at, OffsetPolynomial *poly = nullptr) {
         auto& p = powers[granularity];
         auto xpowers = p.get(at.first);
         auto ypowers = p.get(at.second);
+        if (poly) {
+            assert(get_max_individual_degree(*poly) <= get_max_individual_degree(this->polynomial));
+        }
+        auto& polynomial = poly ? *poly : this->polynomial;
         return polynomial.map<double>([&](Polynomial<double, 2> pcoeff) -> double {
             double sum = 0;
             for (const auto& [mon, cof] : pcoeff.coefficients) {
