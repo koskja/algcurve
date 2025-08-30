@@ -101,7 +101,7 @@ template <typename T, usize NVARS> struct Polynomial {
     usize max_degree(usize variable) const {
         usize max_degree = 0;
         for (const auto& [monomial, _] : coefficients) {
-            max_degree = std::max(max_degree, monomial.exponents[variable]);
+            max_degree = std::max<usize>(max_degree, static_cast<usize>(monomial.exponents[variable]));
         }
         return max_degree;
     }
@@ -126,12 +126,24 @@ template <typename T, usize NVARS> struct Polynomial {
         }
         return result;
     }
+    Polynomial<T, NVARS>& operator+=(const Polynomial<T, NVARS>& other) {
+        for (const auto& [monomial, coefficient] : other.coefficients) {
+            this->coefficients[monomial] += coefficient;
+        }
+        return *this;
+    }
     Polynomial<T, NVARS> operator-(const Polynomial<T, NVARS>& other) const {
         Polynomial<T, NVARS> result = *this;
         for (const auto& [monomial, coefficient] : other.coefficients) {
             result.coefficients[monomial] -= coefficient;
         }
         return result;
+    }
+    Polynomial<T, NVARS>& operator-=(const Polynomial<T, NVARS>& other) {
+        for (const auto& [monomial, coefficient] : other.coefficients) {
+            this->coefficients[monomial] -= coefficient;
+        }
+        return *this;
     }
     Polynomial<T, NVARS> operator*(const Polynomial<T, NVARS>& other) const {
         Polynomial<T, NVARS> result;

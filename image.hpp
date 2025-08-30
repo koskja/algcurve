@@ -2,10 +2,12 @@
 #include "core.hpp"
 #include "thread.hpp"
 #include <array>
+#include <cassert>
 #include <fstream>
 #include <numeric>
 #include <vector>
 
+/// A base class for pixels. The values are all in the range [0.0, 1.0].
 struct Pixel {
     virtual ~Pixel() = default;
     virtual double r() const = 0;
@@ -63,6 +65,31 @@ struct Real : Pixel {
     }
 };
 
+struct BlackWhite : Pixel {
+    u8 _v;
+    double r() const override {
+        return _v;
+    }
+    double g() const override {
+        return _v;
+    }
+    double b() const override {
+        return _v;
+    }
+    void set_r(double r) override {
+        _v = r == 0.0 ? 0 : 1;
+    }
+    void set_g(double g) override {
+        _v = g == 0.0 ? 0 : 1;
+    }
+    void set_b(double b) override {
+        _v = b == 0.0 ? 0 : 1;
+    }
+    void set_v(u8 v) {
+        _v = v;
+    }
+};
+
 template <usize D, typename P = Triplet> struct Texture {
     union {
         std::array<usize, D> dims;
@@ -79,6 +106,16 @@ template <usize D, typename P = Triplet> struct Texture {
 
     usize size() const {
         return std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<usize>());
+    }
+
+    template <typename... Args> constexpr bool in_bounds(Args... _args) const {
+        std::array<usize, D> args = {static_cast<usize>(_args)...};
+        for (usize i = 0; i < D; ++i) {
+            if (args[i] >= dims[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     template <typename... Args> constexpr usize to_index(Args... _args) const {
@@ -112,12 +149,12 @@ template <usize D, typename P = Triplet> struct Texture {
     }
 
     template <typename... Args> P& operator()(Args... args) {
-        assert(to_index(args...) < size());
+        assert(in_bounds(args...));
         return data[to_index(args...)];
     }
 
     template <typename... Args> const P& operator()(Args... args) const {
-        assert(to_index(args...) < size());
+        assert(in_bounds(args...));
         return data[to_index(args...)];
     }
 

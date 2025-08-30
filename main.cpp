@@ -74,27 +74,6 @@ template <usize NVARS> Polynomial<double, NVARS> parse_expression(std::string_vi
     return parse_ast<NVARS>(std::move(root));
 }
 
-Texture2D<Real> render_image(Polynomial<double, 2> p, ImageParams params) {
-    auto img = Texture<2, Real>(params.width, params.height);
-    for (usize y = 0; y < img.height; ++y) {
-        for (usize x = 0; x < img.width; ++x) {
-            auto plane_coords = params.to_plane(x, y);
-            auto pval = p.eval(plane_coords);
-            img(x, y).set_v(params.soft_clamp(pval));
-        }
-    }
-    return img;
-}
-
-std::vector<Texture2D<Real>> render_images(AnimationParams& params) {
-    return parallel_map<Texture2D<Real>>(
-        [&](double lambda) {
-            auto p = params.p1 * lambda + params.p2 * (1 - lambda);
-            return render_image(p, params.image);
-        },
-        std::span(params.lambdas));
-}
-
 template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& right) {
     assert(left.width == right.width && left.height == right.height);
     double sum = 0.0;
@@ -112,13 +91,6 @@ template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& 
 }
 
 int main() {
-    auto p = parse_expression<4>("(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)");
-    auto xsub = parse_expression<4>("x+z");
-    auto ysub = parse_expression<4>("y+w");
-    p = p.substitute(0, xsub);
-    p = p.substitute(1, ysub);
-    std::cout << p << std::endl;
-    return 1;
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
     // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
     // std::string expression = "(x^2+y^2-1)^3-x^2y^3";
@@ -131,23 +103,25 @@ int main() {
     auto p2 = parse_expression<2>(expression2);
     usize width = 1440;
     usize height = 1440;
+    usize pow2_side = 1u << (usize)std::floor(std::log2((double)width));
+    width = height = pow2_side;
     auto plane_height = 4.0;
-    auto aspect_ratio = (double)width / height;
-    auto [x0, x1, y0, y1] = std::array{
-        -plane_height * aspect_ratio / 2, plane_height * aspect_ratio / 2, -plane_height / 2, plane_height / 2};
-    auto to_plane = [&](usize px, usize py) {
-        double x = x0 + (x1 - x0) * px / (width - 1);
-        double y = y0 + (y1 - y0) * py / (height - 1);
-        return std::array{x, y};
-    };
-    auto soft_clamp = [](double v) -> double { return 1 - std::abs(std::atan(v * 100) / M_PI * 2); };
-    auto img_params = ImageParams{to_plane, soft_clamp, width, height};
-    std::map<double, Texture2D<Real>> interpolation_steps = std::map<double, Texture2D<Real>>();
-    interpolation_steps.insert({0.0, render_image(p2, img_params)});
-    interpolation_steps.insert({1.0, render_image(p1, img_params)});
+    auto img_params = ImageParams{width, height};
+
+    usize md1 = std::max<usize>(p1.max_degree(0), p1.max_degree(1));
+    usize md2 = std::max<usize>(p2.max_degree(0), p2.max_degree(1));
+    usize max_individual_degree = std::max(md1, md2);
+    usize max_granularity = (usize)std::log2((double)width);
+    PreparedLattices lattices(-plane_height / 2, plane_height / 2, max_individual_degree, max_granularity);
+
+    std::map<double, Texture2D<BlackWhite>> interpolation_steps = std::map<double, Texture2D<BlackWhite>>();
+    auto p2_off = to_offset_polynomial(p2);
+    auto p1_off = to_offset_polynomial(p1);
+    interpolation_steps.insert({0.0, render_image(p2_off, lattices, img_params)});
+    interpolation_steps.insert({1.0, render_image(p1_off, lattices, img_params)});
     std::vector<std::pair<double, double>> candidate_intervals;
     candidate_intervals.push_back({0.0, 1.0});
-    const auto max_distance = 0.005;
+    auto max_distance = 0.01;
     while (!candidate_intervals.empty()) {
         auto new_candidates = std::vector<std::pair<double, double>>();
         auto to_render = std::vector<double>();
@@ -166,7 +140,7 @@ int main() {
         for (usize i = 0; i < candidate_intervals.size(); ++i) {
             auto [left, right] = candidate_intervals[i];
             auto distance = distances[i];
-            if (distance > max_distance && right - left > 1e-14) {
+            if (distance > max_distance && right - left > 4 * std::numeric_limits<double>::epsilon()) {
                 auto midpoint = (left + right) / 2;
                 to_render.push_back(midpoint);
                 new_candidates.emplace_back(left, midpoint);
@@ -174,16 +148,16 @@ int main() {
             }
         }
         auto ani_params = AnimationParams{img_params, p1, p2, std::span(to_render)};
-        auto new_images = render_images(ani_params);
+        auto new_images = render_images(lattices, ani_params);
         for (usize i = 0; i < to_render.size(); ++i) {
-            std::pair<double, Texture2D<Real>> kv = std::pair(to_render[i], std::move(new_images[i]));
+            std::pair<double, Texture2D<BlackWhite>> kv = std::pair(to_render[i], std::move(new_images[i]));
             interpolation_steps.insert(kv);
         }
         candidate_intervals = new_candidates;
     }
     auto num_images = interpolation_steps.size();
     auto num_end_reps = 4;
-    std::vector<std::pair<std::string, Texture2D<Real>&>> work_queue;
+    std::vector<std::pair<std::string, Texture2D<BlackWhite>&>> work_queue;
     usize i = 0;
     for (auto& [t, img] : interpolation_steps) {
         auto num_reps = 1;
