@@ -4,8 +4,7 @@
 /// A polynomial in two variables, [x, y], where each coefficient is a polynomial in two variables, [dx, dy].
 /// By evaluating the coefficients at a "point" [dx, dy], we get a polynomial in two variables, [x, y].
 using OffsetPolynomial = Polynomial<Polynomial<double, 2>, 2>;
-template<typename T>
-using Point = std::pair<T, T>;
+template <typename T> using Point = std::pair<T, T>;
 
 static usize get_max_individual_degree(OffsetPolynomial& poly) {
     usize max_deg = 0;
@@ -23,13 +22,13 @@ usize align_to_simd(usize x) {
 }
 
 /// Get the first `n` powers of `x` and store them in `powers`.
-void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_simd=false) {
+void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_simd = false) {
     if (aligned_to_simd) {
         assert(((((usize)powers.data()) & (SIMD_ALIGN - 1)) == 0));
         assert(powers.size() % SIMD_NUM_VALUES == 0);
     }
     if (n == 0) return;
-    powers[0] = 1.0; 
+    powers[0] = 1.0;
     if (n == 1) return;
 
     usize remainder = n % SIMD_NUM_VALUES;
@@ -43,8 +42,8 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
     double x_mul_step = powers[SIMD_NUM_VALUES - 1] * x;
     for (; i < n; i += SIMD_NUM_VALUES) {
         for (usize j = 0; j < SIMD_NUM_VALUES; ++j) {
-             if (i + j >= n) break;
-             powers[i + j] = powers[i + j - SIMD_NUM_VALUES] * x_mul_step;
+            if (i + j >= n) break;
+            powers[i + j] = powers[i + j - SIMD_NUM_VALUES] * x_mul_step;
         }
     }
     for (; i < n; ++i) {
@@ -52,7 +51,7 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
     }
 }
 
-/// A container for precalculated powers of a list of values. 
+/// A container for precalculated powers of a list of values.
 /// Essentially a thin wrapper around a 2D array of doubles (a list of rows),
 /// where each row is aligned to `SIMD_ALIGN`.
 struct PreparedPowers {
@@ -67,20 +66,26 @@ struct PreparedPowers {
     }
     PreparedPowers(double min, double max, usize n_values, usize max_power) : num_rows(n_values) {
         row_len = align_to_simd(max_power + 1);
-        powers = (double*) aligned_alloc(SIMD_ALIGN, row_len * n_values * sizeof(double));
-        parallel_for( n_values, [&](usize i) {
-            double value = min + i * (max - min) / (double)n_values;
-            std::span<double> current_powers(powers + i * row_len, row_len);
-            get_powers(current_powers, value, max_power + 1, true);
-        }, 1024 / (max_power + 1));
+        powers = (double *)aligned_alloc(SIMD_ALIGN, row_len * n_values * sizeof(double));
+        parallel_for(
+            n_values,
+            [&](usize i) {
+                double value = min + i * (max - min) / (double)n_values;
+                std::span<double> current_powers(powers + i * row_len, row_len);
+                get_powers(current_powers, value, max_power + 1, true);
+            },
+            1024 / (max_power + 1));
     }
     PreparedPowers(std::span<double> values, usize max_power) : num_rows(values.size()) {
         row_len = align_to_simd(max_power + 1);
-        powers = (double*) aligned_alloc(SIMD_ALIGN, row_len * values.size() * sizeof(double));
-        parallel_for( values.size(), [&](usize i) {
-            std::span<double> current_powers(powers + i * row_len, row_len);
-            get_powers(current_powers, values[i], max_power + 1, true);
-        }, 1024 / (max_power + 1));
+        powers = (double *)aligned_alloc(SIMD_ALIGN, row_len * values.size() * sizeof(double));
+        parallel_for(
+            values.size(),
+            [&](usize i) {
+                std::span<double> current_powers(powers + i * row_len, row_len);
+                get_powers(current_powers, values[i], max_power + 1, true);
+            },
+            1024 / (max_power + 1));
     }
     ~PreparedPowers() {
         free(powers);
@@ -91,17 +96,16 @@ struct PreparedPowers {
     }
 };
 
-/// A container for precalculated data for offsetting a polynomial (calculating the substitution p(x, y) -> p(x - dx, y - dy)).
-/// The specific calculation required for checking for roots of a polynomial (`may_have_root`)
-/// is done by checking points on a lattice (a square grid of points with a side length of 2^granularity).
-/// This struct stores a list of PreparedPowers, one for each granularity.
+/// A container for precalculated data for offsetting a polynomial (calculating the substitution p(x, y) -> p(x - dx, y
+/// - dy)). The specific calculation required for checking for roots of a polynomial (`may_have_root`) is done by
+/// checking points on a lattice (a square grid of points with a side length of 2^granularity). This struct stores a
+/// list of PreparedPowers, one for each granularity.
 struct PreparedLattices {
     std::vector<PreparedPowers> powers;
     OffsetPolynomial polynomial;
-    /// The width of the bounding box of the lattice. 
+    /// The width of the bounding box of the lattice.
     double width;
-    PreparedLattices(double min, double max, OffsetPolynomial poly, usize max_granularity) 
-     : polynomial(poly) {
+    PreparedLattices(double min, double max, OffsetPolynomial poly, usize max_granularity) : polynomial(poly) {
         width = max - min;
         usize max_deg = get_max_individual_degree(poly);
         powers = parallel_nat_map<PreparedPowers>(max_granularity, [&](usize granularity) {
@@ -146,13 +150,16 @@ std::vector<bool> are_points_viable(std::span<Point<usize>> points, usize granul
     auto delta = lattices.width / (1 << granularity);
     auto delta_powers = std::vector<double>(get_max_individual_degree(lattices.polynomial) + 1);
     get_powers(delta_powers, delta, delta_powers.size());
-    return parallel_map<bool>([&](Point<usize> point) -> bool {
-        auto p = lattices.eval(granularity, point);
-        return may_have_root(p, delta_powers);
-    }, points);
+    return parallel_map<bool>(
+        [&](Point<usize> point) -> bool {
+            auto p = lattices.eval(granularity, point);
+            return may_have_root(p, delta_powers);
+        },
+        points);
 }
 
-std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points, std::span<bool> viable, usize old_granularity) {
+std::vector<Point<usize>>
+subdivide_viable_points(std::span<Point<usize>> points, std::span<bool> viable, usize old_granularity) {
     assert(viable.size() == points.size());
     auto result = std::vector<Point<usize>>();
     for (usize i = 0; i < points.size(); ++i) {

@@ -1,0 +1,43 @@
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Line breaking
+ColumnLimit: 120
+ReflowComments: true
+
+# Braces and short statements
+BreakBeforeBraces: Attach
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Empty
+
+# Pointers/references
+DerivePointerAlignment: false
+PointerAlignment: Right
+ReferenceAlignment: Left
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInAngles: false
+AlignOperands: false
+
+# Function calls/params
+BinPackArguments: false
+BinPackParameters: false
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+
+# Includes
+IncludeBlocks: Preserve
+
+# Templates and standard
+SpaceAfterTemplateKeyword: true
+Standard: c++20
+

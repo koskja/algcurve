@@ -1,7 +1,7 @@
 #pragma once
+#include <memory>
 #include <variant>
 #include <vector>
-#include <memory>
 
 enum class TokenType {
     Add,

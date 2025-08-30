@@ -17,7 +17,7 @@ OBJECTS = $(SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 
 INCLUDES = $(foreach dir,$(SRC_DIRS),-I$(dir))
 
-.PHONY: default all clean
+.PHONY: default all clean compdb
 
 default: $(TARGET)
 all: default
@@ -37,3 +37,7 @@ $(TARGET): $(OBJECTS)
 clean:
 	-rm -rf $(OBJ_DIR)
 	-rm -f $(TARGET)
+
+compdb: $(OBJ_DIR)
+	@echo Generating compile_commands.json from Makefile variables
+	@SOURCES="$(SOURCES)" CC="$(CC)" CFLAGS="$(CFLAGS)" INCLUDES="$(INCLUDES)" OBJ_DIR="$(OBJ_DIR)" python3 scripts/gen_compile_commands.py

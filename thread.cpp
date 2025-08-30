@@ -30,11 +30,13 @@ void parallel_for(usize n, const std::function<void(usize)>& func, usize min_wor
         } else {
             to_take = n - i;
         }
-        threads.push_back(spawn_thread([i, to_take, &func]() {
-            for (usize j = i; j < i + to_take; ++j) {
-                func(j);
-            }
-        }, 1));
+        threads.push_back(spawn_thread(
+            [i, to_take, &func]() {
+                for (usize j = i; j < i + to_take; ++j) {
+                    func(j);
+                }
+            },
+            1));
         i += to_take;
         rem_threads -= 1;
     }

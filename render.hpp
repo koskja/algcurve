@@ -1,5 +1,5 @@
-#include "polynomial.hpp"
 #include "image.hpp"
+#include "polynomial.hpp"
 
 #define SIMD_SIZE 512 / 8
 #define SIMD_ALIGN SIMD_SIZE
