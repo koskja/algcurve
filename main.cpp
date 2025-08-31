@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <cmath>
 #include <functional>
@@ -77,6 +76,8 @@ template <usize NVARS> Polynomial<double, NVARS> parse_expression(std::string_vi
 template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& right) {
     assert(left.width == right.width && left.height == right.height);
     double sum = 0.0;
+    double left_sum = 0.0;
+    double right_sum = 0.0;
     for (usize y = 0; y < left.height; ++y) {
         for (usize x = 0; x < left.width; ++x) {
             auto& l = left(x, y);
@@ -85,16 +86,19 @@ template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& 
             double dg = l.g() - r.g();
             double db = l.b() - r.b();
             sum += dr * dr + dg * dg + db * db;
+            left_sum += l.r() * l.r() + l.g() * l.g() + l.b() * l.b();
+            right_sum += r.r() * r.r() + r.g() * r.g() + r.b() * r.b();
         }
     }
-    return sum / left.width / left.height;
+    double avg = (left_sum + right_sum) / 2;
+    return sum / avg;
 }
 
 int main() {
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
     // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
-    // std::string expression = "(x^2+y^2-1)^3-x^2y^3";
-    // std::string expression = "(x^2+y^2)^5-(x^4-6x^2y^2+y^4)^2";
+    // std::string expression1 = "(x^2+y^2-1)^3-x^2y^3";
+    // std::string expression2 = "(x^2+y^2)^5-(x^4-6x^2y^2+y^4)^2";
     // std::string expression =
     // "2.8x^2(x^2(2.5x^2+y^2-2)+1.2y^2(y(3y-0.75)-6.0311)+3.09)+0.98y^2((y^2-3.01)y^2+3)-1.005";
     std::string expression1, expression2;
@@ -115,13 +119,14 @@ int main() {
     PreparedLattices lattices(-plane_height / 2, plane_height / 2, max_individual_degree, max_granularity);
 
     std::map<double, Texture2D<BlackWhite>> interpolation_steps = std::map<double, Texture2D<BlackWhite>>();
-    auto p2_off = to_offset_polynomial(p2);
-    auto p1_off = to_offset_polynomial(p1);
-    interpolation_steps.insert({0.0, render_image(p2_off, lattices, img_params)});
-    interpolation_steps.insert({1.0, render_image(p1_off, lattices, img_params)});
+    auto zeroone = std::vector<double>({0.0, 1.0});
+    auto ani_params = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
+    auto images = render_images(lattices, ani_params);
+    interpolation_steps.insert({0.0, std::move(images[0])});
+    interpolation_steps.insert({1.0, std::move(images[1])});
     std::vector<std::pair<double, double>> candidate_intervals;
     candidate_intervals.push_back({0.0, 1.0});
-    auto max_distance = 0.01;
+    auto max_distance = 0.2;
     while (!candidate_intervals.empty()) {
         auto new_candidates = std::vector<std::pair<double, double>>();
         auto to_render = std::vector<double>();
@@ -137,9 +142,11 @@ int main() {
                 return distance;
             },
             std::span(candidate_intervals));
+        auto max_current_distance = 0.0;
         for (usize i = 0; i < candidate_intervals.size(); ++i) {
             auto [left, right] = candidate_intervals[i];
             auto distance = distances[i];
+            if (distance > max_current_distance) max_current_distance = distance;
             if (distance > max_distance && right - left > 4 * std::numeric_limits<double>::epsilon()) {
                 auto midpoint = (left + right) / 2;
                 to_render.push_back(midpoint);
@@ -147,6 +154,7 @@ int main() {
                 new_candidates.emplace_back(midpoint, right);
             }
         }
+        std::cout << "Max distance: " << max_current_distance << std::endl;
         auto ani_params = AnimationParams{img_params, p1, p2, std::span(to_render)};
         auto new_images = render_images(lattices, ani_params);
         for (usize i = 0; i < to_render.size(); ++i) {

@@ -35,19 +35,32 @@ OffsetPolynomial to_offset_polynomial(const Polynomial<double, 2>& poly) {
     return merge_coeffs<double, 2>(nested_twice);
 }
 
-static usize get_max_individual_degree(OffsetPolynomial& poly) {
-    usize max_deg = 0;
-    for (const auto& [_, poly_coeff] : poly.coefficients) {
-        for (const auto& [mono, _] : poly_coeff.coefficients) {
-            if (mono.exponents[0] > max_deg) max_deg = mono.exponents[0];
-            if (mono.exponents[1] > max_deg) max_deg = mono.exponents[1];
-        }
+enum OssifiedPolynomialType { DENSE, SPARSE };
+
+OssifiedPolynomialType decide_ossified_polynomial_type(const OffsetPolynomial& poly) {
+    if (poly.coefficients.empty()) return SPARSE;
+
+    double total_fullness = 0.0;
+    usize num_entries = 0;
+
+    for (const auto& [_, inner] : poly.coefficients) {
+        usize xdeg = inner.max_degree(0);
+        usize ydeg = inner.max_degree(1);
+        usize total_slots = (xdeg + 1) * (ydeg + 1);
+        usize used_slots = inner.coefficients.size();
+        double fullness = total_slots == 0 ? 0.0 : (double)used_slots / (double)total_slots;
+        total_fullness += fullness;
+        num_entries += 1;
     }
-    return max_deg;
+
+    double average_fullness = num_entries == 0 ? 0.0 : total_fullness / (double)num_entries;
+    return average_fullness > 0.5 ? DENSE : SPARSE;
 }
 
-usize align_to_simd(usize x) {
-    return (x + (SIMD_ALIGN - 1)) & ~(SIMD_ALIGN - 1);
+template <typename T> usize align_to_simd(usize x) {
+    auto byte_len = x * sizeof(T);
+    auto aligned_byte_len = (byte_len + (SIMD_ALIGN - 1)) & ~(SIMD_ALIGN - 1);
+    return aligned_byte_len / sizeof(T);
 }
 
 /// Get the first `n` powers of `x` and store them in `powers`.
@@ -60,8 +73,6 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
     powers[0] = 1.0;
     if (n == 1) return;
 
-    usize remainder = n % SIMD_NUM_VALUES;
-    usize to_simd_num = (remainder == 0) ? 0 : SIMD_NUM_VALUES - remainder;
     usize i = 1;
 
     for (; i < SIMD_NUM_VALUES && i < n; ++i) {
@@ -80,29 +91,6 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
     }
 }
 
-PreparedPowers::PreparedPowers() : num_rows(0), row_len(0), powers(nullptr) {}
-
-PreparedPowers::PreparedPowers(PreparedPowers&& other) noexcept
-    : num_rows(other.num_rows), row_len(other.row_len), powers(other.powers) {
-    other.num_rows = 0;
-    other.row_len = 0;
-    other.powers = nullptr;
-}
-
-PreparedPowers& PreparedPowers::operator=(PreparedPowers&& other) noexcept {
-    if (this == &other) return *this;
-    if (powers) {
-        free(powers);
-    }
-    num_rows = other.num_rows;
-    row_len = other.row_len;
-    powers = other.powers;
-    other.num_rows = 0;
-    other.row_len = 0;
-    other.powers = nullptr;
-    return *this;
-}
-
 PreparedPowers PreparedPowers::from_values(std::span<double> values, usize max_power) {
     return PreparedPowers(values, max_power);
 }
@@ -112,37 +100,33 @@ PreparedPowers PreparedPowers::from_range(double min, double max, usize n_values
 }
 
 PreparedPowers::PreparedPowers(double min, double max, usize n_values, usize max_power) : num_rows(n_values) {
-    row_len = align_to_simd(max_power + 1);
-    powers = (double *)aligned_alloc(SIMD_ALIGN, row_len * n_values * sizeof(double));
+    row_len = align_to_simd<double>(max_power + 1);
+    powers = SimdHeapArray<double, SIMD_ALIGN>(row_len * n_values);
     parallel_for(
         n_values,
         [&](usize i) {
             double value = min + i * (max - min) / (double)n_values;
-            std::span<double> current_powers(powers + i * row_len, row_len);
+            auto current_powers = powers.slice_len(i * row_len, row_len);
             get_powers(current_powers, value, max_power + 1, true);
         },
         1024 / (max_power + 1));
 }
 
 PreparedPowers::PreparedPowers(std::span<double> values, usize max_power) : num_rows(values.size()) {
-    row_len = align_to_simd(max_power + 1);
-    powers = (double *)aligned_alloc(SIMD_ALIGN, row_len * values.size() * sizeof(double));
+    row_len = align_to_simd<double>(max_power + 1);
+    powers = SimdHeapArray<double, SIMD_ALIGN>(row_len * values.size());
     parallel_for(
         values.size(),
         [&](usize i) {
-            std::span<double> current_powers(powers + i * row_len, row_len);
+            auto current_powers = powers.slice_len(i * row_len, row_len);
             get_powers(current_powers, values[i], max_power + 1, true);
         },
         1024 / (max_power + 1));
 }
 
-PreparedPowers::~PreparedPowers() {
-    free(powers);
-}
-
 std::span<const double> PreparedPowers::get(usize index) const {
     assert(index < num_rows);
-    return std::span<const double>(powers + index * row_len, row_len);
+    return powers.slice_len(index * row_len, row_len);
 }
 
 PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usize max_granularity)
@@ -158,18 +142,13 @@ PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usi
     }
 }
 
-Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, OffsetPolynomial& poly) {
+template <typename P>
+    requires std::is_base_of_v<OssifiedPolynomial, P>
+Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, OssifiedOffsetPolynomial<P>& poly) {
     auto& p = powers[granularity];
     auto xpowers = p.get(at.first);
     auto ypowers = p.get(at.second);
-    assert(get_max_individual_degree(poly) <= max_degree);
-    return poly.map<double>([&](Polynomial<double, 2> pcoeff) -> double {
-        double sum = 0;
-        for (const auto& [mon, cof] : pcoeff.coefficients) {
-            sum += cof * xpowers[mon.exponents[0]] * ypowers[mon.exponents[1]];
-        }
-        return sum;
-    });
+    return poly.template map<double>([&](P pcoeff) -> double { return pcoeff.eval(xpowers, ypowers); });
 }
 
 /// Check if the polynomial may have a root in the box `[-delta, delta]^2`.
@@ -188,10 +167,12 @@ bool may_have_root(const Polynomial<double, 2>& poly, std::span<double> delta_po
     return sum <= 0;
 }
 
+template <typename P>
+    requires std::is_base_of_v<OssifiedPolynomial, P>
 std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
-                                  OffsetPolynomial& poly) {
+                                  OssifiedOffsetPolynomial<P>& poly) {
     auto delta = lattices.width / (1 << granularity);
     auto delta_powers = std::vector<double>(lattices.max_degree + 1);
     get_powers(delta_powers, delta, delta_powers.size());
@@ -217,7 +198,9 @@ std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points
     return result;
 }
 
-Texture2D<BlackWhite> render_image(OffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
+template <typename P>
+    requires std::is_base_of_v<OssifiedPolynomial, P>
+Texture2D<BlackWhite> render_image(OssifiedOffsetPolynomial<P>& poly, PreparedLattices& lattices, ImageParams& params) {
     assert(params.width == params.height);
     auto img = Texture2D<BlackWhite>(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
@@ -241,7 +224,112 @@ std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, Ani
         [&](double lambda) {
             auto base = params.p1 * lambda + params.p2 * (1 - lambda);
             auto offset_poly = to_offset_polynomial(base);
-            return render_image(offset_poly, lattices, params.image);
+            auto type = decide_ossified_polynomial_type(offset_poly);
+            if (type == DENSE) {
+                auto dense_poly = offset_poly.map<DenseOssifiedPolynomial>(
+                    [](Polynomial<double, 2> p) -> DenseOssifiedPolynomial { return DenseOssifiedPolynomial(p); });
+                return render_image(dense_poly, lattices, params.image);
+            } else {
+                auto sparse_poly = offset_poly.map<SparseOssifiedPolynomial>(
+                    [](Polynomial<double, 2> p) -> SparseOssifiedPolynomial { return SparseOssifiedPolynomial(p); });
+                return render_image(sparse_poly, lattices, params.image);
+            }
         },
         std::span(params.lambdas));
+}
+
+DenseOssifiedPolynomial::DenseOssifiedPolynomial() {
+    x_degree = 0;
+    y_degree = 0;
+    grid = SimdHeapArray<double, SIMD_ALIGN>();
+}
+
+DenseOssifiedPolynomial::DenseOssifiedPolynomial(Polynomial<double, 2> polynomial) {
+    x_degree = polynomial.max_degree(0);
+    y_degree = polynomial.max_degree(1);
+    const usize xdim = x_degree + 1;
+    const usize ydim = y_degree + 1;
+    const usize total = xdim * ydim;
+    grid = SimdHeapArray<double, SIMD_ALIGN>(total);
+    for (usize i = 0; i < total; ++i) grid[i] = 0.0;
+
+    for (const auto& [monomial, coefficient] : polynomial.coefficients) {
+        const usize xi = static_cast<usize>(monomial.exponents[0]);
+        const usize yi = static_cast<usize>(monomial.exponents[1]);
+        grid[xi * ydim + yi] += coefficient;
+    }
+}
+
+double DenseOssifiedPolynomial::eval(std::span<const double> xpowers, std::span<const double> ypowers) const {
+    // Compute: sum_j xpowers[j] * dot(grid_row_j, ypowers)
+
+    const double *__restrict xp = xpowers.data();
+    const double *__restrict yp = ypowers.data();
+
+    // assert(reinterpret_cast<uintptr_t>(xp) % SIMD_ALIGN == 0 && "xp is not SIMD aligned");
+    // assert(reinterpret_cast<uintptr_t>(yp) % SIMD_ALIGN == 0 && "yp is not SIMD aligned");
+
+    xp = (const double *)__builtin_assume_aligned(xp, SIMD_ALIGN);
+    yp = (const double *)__builtin_assume_aligned(yp, SIMD_ALIGN);
+
+    const usize ydim = y_degree + 1;
+    double total = 0.0;
+    for (usize j = 0; j <= x_degree; ++j) {
+        const double xj = xp[j];
+        const double *__restrict row = &grid[j * ydim];
+        double dot = 0.0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+        for (usize k = 0; k <= y_degree; ++k) {
+            dot += row[k] * yp[k];
+        }
+        total += xj * dot;
+    }
+    return total;
+}
+
+SparseOssifiedPolynomial::SparseOssifiedPolynomial() {}
+
+SparseOssifiedPolynomial::SparseOssifiedPolynomial(Polynomial<double, 2> polynomial) {
+    num_coefficients = polynomial.coefficients.size();
+    coefficients = SimdHeapArray<double, SIMD_ALIGN>(num_coefficients);
+    x_exponents = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
+    y_exponents = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
+    usize i = 0;
+    for (const auto& [monomial, coefficient] : polynomial.coefficients) {
+        coefficients[i] = coefficient;
+        x_exponents[i] = monomial.exponents[0];
+        y_exponents[i] = monomial.exponents[1];
+        i++;
+    }
+}
+
+double SparseOssifiedPolynomial::eval(std::span<const double> xpowers, std::span<const double> ypowers) const {
+    const double *__restrict xp = xpowers.data();
+    const double *__restrict yp = ypowers.data();
+    const double *__restrict cof = coefficients.data;
+    const exp_t *__restrict xe = x_exponents.data;
+    const exp_t *__restrict ye = y_exponents.data;
+
+    // assert(reinterpret_cast<uintptr_t>(xp) % SIMD_ALIGN == 0 && "xp is not SIMD aligned");
+    // assert(reinterpret_cast<uintptr_t>(yp) % SIMD_ALIGN == 0 && "yp is not SIMD aligned");
+    // assert(reinterpret_cast<uintptr_t>(cof) % SIMD_ALIGN == 0 && "coefficients is not SIMD aligned");
+    // assert(reinterpret_cast<uintptr_t>(xe) % SIMD_ALIGN == 0 && "x_exponents is not SIMD aligned");
+    // assert(reinterpret_cast<uintptr_t>(ye) % SIMD_ALIGN == 0 && "y_exponents is not SIMD aligned");
+
+    xp = (const double *)__builtin_assume_aligned(xp, SIMD_ALIGN);
+    yp = (const double *)__builtin_assume_aligned(yp, SIMD_ALIGN);
+    cof = (const double *)__builtin_assume_aligned(cof, SIMD_ALIGN);
+    xe = (const exp_t *)__builtin_assume_aligned(xe, SIMD_ALIGN);
+    ye = (const exp_t *)__builtin_assume_aligned(ye, SIMD_ALIGN);
+
+    double total = 0.0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+    for (usize i = 0; i < num_coefficients; ++i) {
+        total += cof[i] * xp[xe[i]] * yp[ye[i]];
+    }
+    return total;
 }

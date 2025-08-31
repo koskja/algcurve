@@ -2,7 +2,7 @@
 #include "polynomial.hpp"
 #include <cstdlib>
 
-#define SIMD_SIZE 512 / 8
+#define SIMD_SIZE (512 / 8)
 #define SIMD_ALIGN SIMD_SIZE
 #define SIMD_NUM_VALUES (SIMD_SIZE / sizeof(double))
 
@@ -16,8 +16,6 @@ struct AnimationParams {
     std::span<double> lambdas;
 };
 
-using OffsetPolynomial = Polynomial<Polynomial<double, 2>, 2>;
-
 usize align_to_simd(usize x);
 void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_simd = false);
 
@@ -27,19 +25,45 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
 struct PreparedPowers {
     usize num_rows;
     usize row_len;
-    double *powers;
+    SimdHeapArray<double, SIMD_ALIGN> powers;
     PreparedPowers();
-    PreparedPowers(const PreparedPowers&) = delete;
-    PreparedPowers& operator=(const PreparedPowers&) = delete;
-    PreparedPowers(PreparedPowers&& other) noexcept;
-    PreparedPowers& operator=(PreparedPowers&& other) noexcept;
     static PreparedPowers from_values(std::span<double> values, usize max_power);
     static PreparedPowers from_range(double min, double max, usize n_values, usize max_power);
     PreparedPowers(double min, double max, usize n_values, usize max_power);
     PreparedPowers(std::span<double> values, usize max_power);
-    ~PreparedPowers();
     std::span<const double> get(usize index) const;
 };
+
+struct OssifiedPolynomial {
+    virtual double eval(std::span<const double> xpowers, std::span<const double> ypowers) const = 0;
+};
+
+struct SparseOssifiedPolynomial : OssifiedPolynomial {
+    SimdHeapArray<double, SIMD_ALIGN> coefficients;
+    SimdHeapArray<exp_t, SIMD_ALIGN> x_exponents;
+    SimdHeapArray<exp_t, SIMD_ALIGN> y_exponents;
+    usize num_coefficients;
+    SparseOssifiedPolynomial();
+    SparseOssifiedPolynomial(Polynomial<double, 2> polynomial);
+
+    double eval(std::span<const double> xpowers, std::span<const double> ypowers) const override;
+};
+
+struct DenseOssifiedPolynomial : OssifiedPolynomial {
+    usize x_degree;
+    usize y_degree;
+    SimdHeapArray<double, SIMD_ALIGN> grid;
+
+    DenseOssifiedPolynomial();
+    DenseOssifiedPolynomial(Polynomial<double, 2> polynomial);
+
+    double eval(std::span<const double> xpowers, std::span<const double> ypowers) const override;
+};
+
+template <typename P>
+    requires std::is_base_of_v<OssifiedPolynomial, P>
+using OssifiedOffsetPolynomial = Polynomial<P, 2>;
+using OffsetPolynomial = Polynomial<Polynomial<double, 2>, 2>;
 
 /// A container for precalculated data for offsetting a polynomial (calculating the substitution p(x, y) -> p(x - dx, y
 /// - dy)). The specific calculation required for checking for roots of a polynomial (`may_have_root`) is done by
@@ -50,9 +74,9 @@ struct PreparedLattices {
     usize max_degree;
     double width;
     PreparedLattices(double min, double max, usize max_degree, usize max_granularity);
-    Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, OffsetPolynomial& poly);
+    template <typename P>
+        requires std::is_base_of_v<OssifiedPolynomial, P>
+    Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, OssifiedOffsetPolynomial<P>& poly);
 };
 
-OffsetPolynomial to_offset_polynomial(const Polynomial<double, 2>& poly);
-Texture2D<BlackWhite> render_image(OffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
 std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params);
