@@ -28,7 +28,6 @@ typedef i16 exp_t;
 #define __aligned_free(ptr) std::free(ptr)
 #endif
 
-
 template <typename T, usize ALIGN> struct SimdHeapArray {
     T *data;
     usize byte_size;

@@ -1,13 +1,13 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <map>
 #include <span>
 #include <vector>
-#include <cstdlib>
-#include <filesystem>
 
 #include "image.hpp"
 #include "input.hpp"
@@ -99,12 +99,13 @@ template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& 
 int main() {
     // Create intermediate folder for images
     std::string intermediate_dir = "intermediate_images";
-    
+
     // Create intermediate directory using std::filesystem
     try {
         std::filesystem::create_directories(intermediate_dir);
     } catch (const std::filesystem::filesystem_error& e) {
-        std::cout << "Warning: Could not create intermediate directory. Images will be saved in current directory." << std::endl;
+        std::cout << "Warning: Could not create intermediate directory. Images will be saved in current directory."
+                  << std::endl;
         intermediate_dir = ".";
     }
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
@@ -121,7 +122,7 @@ int main() {
     usize height = 1440;
     usize pow2_side = 1u << (usize)std::floor(std::log2((double)width));
     width = height = pow2_side;
-    auto plane_height = 4.0;
+    auto plane_height = 2.0;
     auto img_params = ImageParams{width, height};
 
     usize md1 = std::max<usize>(p1.max_degree(0), p1.max_degree(1));
@@ -185,7 +186,8 @@ int main() {
         if (i == 0 || i == num_images + num_end_reps - 2) num_reps = num_end_reps;
         for (usize j = 0; j < num_reps; ++j) {
             std::string filename_fwd = intermediate_dir + "/zzz" + std::format("{:04}", i) + ".bmp";
-            std::string filename_bwd = intermediate_dir + "/zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
+            std::string filename_bwd =
+                intermediate_dir + "/zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
             work_queue.push_back({filename_fwd, img});
             work_queue.push_back({filename_bwd, img});
             ++i;
@@ -195,10 +197,10 @@ int main() {
         auto& [filename, img] = work_queue[i];
         img.save_bmp(filename);
     });
-    
+
     // Run ffmpeg to create video from images
     std::cout << "Running ffmpeg to create video..." << std::endl;
-    
+
     // Check if ffmpeg is available
     int ffmpeg_check = std::system("ffmpeg -version >nul 2>&1");
     if (ffmpeg_check != 0) {
@@ -206,14 +208,16 @@ int main() {
         std::cout << "Images have been saved in the '" << intermediate_dir << "' directory." << std::endl;
         return 0;
     }
-    
+
     std::string ffmpeg_cmd;
-    #ifdef _WIN32
-    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i \"" + intermediate_dir + "\\zzz%04d.bmp\" -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
-    #else
-    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i " + intermediate_dir + "/zzz%04d.bmp -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
-    #endif
-    
+#ifdef _WIN32
+    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i \"" + intermediate_dir +
+        "\\zzz%04d.bmp\" -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
+#else
+    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i " + intermediate_dir +
+        "/zzz%04d.bmp -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
+#endif
+
     std::cout << "Executing: " << ffmpeg_cmd << std::endl;
     int result = std::system(ffmpeg_cmd.c_str());
     if (result == 0) {
@@ -229,6 +233,6 @@ int main() {
             std::filesystem::remove(work_queue[i].first);
         }
     }
-    
+
     return 0;
 }

@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
+#include <string_view>
 #include <variant>
 #include <vector>
-#include <string_view>
 
 enum class TokenType {
     Add,

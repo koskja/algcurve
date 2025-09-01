@@ -144,7 +144,8 @@ PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usi
 
 template <typename P>
     requires std::is_base_of_v<OssifiedPolynomial, P>
-Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial<P>& poly) {
+Polynomial<double, 2>
+PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial<P>& poly) {
     auto& p = powers[granularity];
     auto xpowers = p.get(at.first);
     auto ypowers = p.get(at.second);
@@ -173,7 +174,7 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
                                   OssifiedOffsetPolynomial<P>& poly) {
-    auto delta = lattices.width / (1 << granularity);
+    auto delta = lattices.width / (2 << granularity);
     auto delta_powers = std::vector<double>(lattices.max_degree + 1);
     get_powers(delta_powers, delta, delta_powers.size());
     return parallel_map<u8>(
@@ -227,11 +228,15 @@ std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, Ani
             auto type = decide_ossified_polynomial_type(offset_poly);
             if (type == DENSE) {
                 auto dense_poly = offset_poly.map<DenseOssifiedPolynomial>(
-                    [](const Polynomial<double, 2>& p) -> DenseOssifiedPolynomial { return DenseOssifiedPolynomial(p); });
+                    [](const Polynomial<double, 2>& p) -> DenseOssifiedPolynomial {
+                        return DenseOssifiedPolynomial(p);
+                    });
                 return render_image(dense_poly, lattices, params.image);
             } else {
                 auto sparse_poly = offset_poly.map<SparseOssifiedPolynomial>(
-                    [](const Polynomial<double, 2>& p) -> SparseOssifiedPolynomial { return SparseOssifiedPolynomial(p); });
+                    [](const Polynomial<double, 2>& p) -> SparseOssifiedPolynomial {
+                        return SparseOssifiedPolynomial(p);
+                    });
                 return render_image(sparse_poly, lattices, params.image);
             }
         },
