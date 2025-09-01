@@ -36,6 +36,7 @@ set(SRC
   input.cpp
   render.cpp
   thread.cpp
+  paper.cpp
 )
 
 add_executable(algcurve ${SRC})
