@@ -1,0 +1,138 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-release",
+      "displayName": "Linux Clang Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-clang-debug",
+      "displayName": "Linux Clang Debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "windows-vs-clangcl-release",
+      "displayName": "Visual Studio 2022 - clang-cl (Release)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": null,
+      "toolset": {
+        "value": "ClangCL"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      },
+      "architecture": {
+        "value": "x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-vs-clangcl-debug",
+      "displayName": "Visual Studio 2022 - clang-cl (Debug)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": null,
+      "toolset": {
+        "value": "ClangCL"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      },
+      "architecture": {
+        "value": "x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-vs-msvc-release",
+      "displayName": "Visual Studio 2022 - MSVC (Release)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "architecture": {
+        "value": "x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-vs-msvc-debug",
+      "displayName": "Visual Studio 2022 - MSVC (Debug)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "architecture": {
+        "value": "x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release" },
+    { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
+    { "name": "windows-vs-clangcl-release", "configurePreset": "windows-vs-clangcl-release", "configuration": "Release" },
+    { "name": "windows-vs-clangcl-debug", "configurePreset": "windows-vs-clangcl-debug", "configuration": "Debug" },
+    { "name": "windows-vs-msvc-release", "configurePreset": "windows-vs-msvc-release", "configuration": "Release" },
+    { "name": "windows-vs-msvc-debug", "configurePreset": "windows-vs-msvc-debug", "configuration": "Debug" }
+  ]
+}
+
+

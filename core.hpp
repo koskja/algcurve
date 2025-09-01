@@ -20,6 +20,15 @@ typedef double f64;
 
 typedef i16 exp_t;
 
+#ifdef _WIN32
+#define __aligned_alloc(align, size) _aligned_malloc(size, align)
+#define __aligned_free(ptr) _aligned_free(ptr)
+#else
+#define __aligned_alloc(align, size) std::aligned_alloc(align, size)
+#define __aligned_free(ptr) std::free(ptr)
+#endif
+
+
 template <typename T, usize ALIGN> struct SimdHeapArray {
     T *data;
     usize byte_size;
@@ -31,7 +40,7 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
         if (aligned_bytes == 0) {
             data = nullptr;
         } else {
-            data = (T *)aligned_alloc(ALIGN, aligned_bytes);
+            data = (T *)__aligned_alloc(ALIGN, aligned_bytes);
         }
     }
     SimdHeapArray(const SimdHeapArray& other) {
@@ -40,7 +49,7 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
             byte_size = 0;
         } else {
             byte_size = other.byte_size;
-            data = (T *)aligned_alloc(ALIGN, other.byte_size);
+            data = (T *)__aligned_alloc(ALIGN, other.byte_size);
             memcpy(data, other.data, other.byte_size);
         }
     }
@@ -50,13 +59,13 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
     }
     SimdHeapArray& operator=(const SimdHeapArray& other) {
         if (this == &other) return *this;
-        if (data) free(data);
+        if (data) __aligned_free(data);
         if (other.byte_size == 0) {
             data = nullptr;
             byte_size = 0;
         } else {
             byte_size = other.byte_size;
-            data = (T *)aligned_alloc(ALIGN, other.byte_size);
+            data = (T *)__aligned_alloc(ALIGN, other.byte_size);
             memcpy(data, other.data, other.byte_size);
         }
         return *this;
@@ -65,7 +74,7 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
         if (this == &other) {
             return *this;
         }
-        if (data) free(data);
+        if (data) __aligned_free(data);
         data = other.data;
         byte_size = other.byte_size;
         other.data = nullptr;
@@ -73,7 +82,7 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
         return *this;
     }
     ~SimdHeapArray() {
-        if (data) free(data);
+        if (data) __aligned_free(data);
     }
     T& operator[](usize idx) {
         return data[idx];

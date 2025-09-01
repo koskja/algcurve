@@ -112,10 +112,10 @@ template <typename T, usize NVARS> struct Polynomial {
         }
         return result;
     }
-    template <typename U> Polynomial<U, NVARS> map(const std::function<U(T)>& func) const {
+    template <typename U> Polynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
         Polynomial<U, NVARS> result;
         for (const auto& [monomial, coefficient] : coefficients) {
-            result.coefficients[monomial] = func(coefficient);
+            result.coefficients.emplace(std::make_pair(monomial, func(coefficient)));
         }
         return result;
     }

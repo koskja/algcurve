@@ -99,7 +99,8 @@ template <usize D, typename P = Triplet> struct Texture {
     };
     std::vector<P> data;
     Texture() = default;
-    template <typename... Args> Texture<sizeof...(Args), P>(Args... args) {
+    template <typename... Args> Texture(Args... args) {
+        static_assert(sizeof...(Args) == D, "Number of arguments must match texture dimensions");
         dims = {static_cast<usize>(args)...};
         data.resize(size());
     }

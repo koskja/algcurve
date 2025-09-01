@@ -76,7 +76,7 @@ struct PreparedLattices {
     PreparedLattices(double min, double max, usize max_degree, usize max_granularity);
     template <typename P>
         requires std::is_base_of_v<OssifiedPolynomial, P>
-    Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, OssifiedOffsetPolynomial<P>& poly);
+    Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, const OssifiedOffsetPolynomial<P>& poly);
 };
 
 std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params);

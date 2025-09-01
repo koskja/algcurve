@@ -1,6 +1,7 @@
 #include "input.hpp"
 #include <cctype>
 #include <stdexcept>
+#include <string>
 
 std::string make_error_message(std::string_view expression, size_t pos, const std::string& message) {
     const size_t context_size = 10; // How many characters of context to show on EACH side

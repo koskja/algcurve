@@ -6,6 +6,8 @@
 #include <map>
 #include <span>
 #include <vector>
+#include <cstdlib>
+#include <filesystem>
 
 #include "image.hpp"
 #include "input.hpp"
@@ -95,6 +97,16 @@ template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& 
 }
 
 int main() {
+    // Create intermediate folder for images
+    std::string intermediate_dir = "intermediate_images";
+    
+    // Create intermediate directory using std::filesystem
+    try {
+        std::filesystem::create_directories(intermediate_dir);
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cout << "Warning: Could not create intermediate directory. Images will be saved in current directory." << std::endl;
+        intermediate_dir = ".";
+    }
     // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
     // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
     // std::string expression1 = "(x^2+y^2-1)^3-x^2y^3";
@@ -118,6 +130,7 @@ int main() {
     usize max_granularity = (usize)std::log2((double)width);
     PreparedLattices lattices(-plane_height / 2, plane_height / 2, max_individual_degree, max_granularity);
 
+    std::cout << "Using " << num_threads() << " threads" << std::endl;
     std::map<double, Texture2D<BlackWhite>> interpolation_steps = std::map<double, Texture2D<BlackWhite>>();
     auto zeroone = std::vector<double>({0.0, 1.0});
     auto ani_params = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
@@ -171,8 +184,8 @@ int main() {
         auto num_reps = 1;
         if (i == 0 || i == num_images + num_end_reps - 2) num_reps = num_end_reps;
         for (usize j = 0; j < num_reps; ++j) {
-            std::string filename_fwd = "zzz" + std::format("{:04}", i) + ".bmp";
-            std::string filename_bwd = "zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
+            std::string filename_fwd = intermediate_dir + "/zzz" + std::format("{:04}", i) + ".bmp";
+            std::string filename_bwd = intermediate_dir + "/zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
             work_queue.push_back({filename_fwd, img});
             work_queue.push_back({filename_bwd, img});
             ++i;
@@ -182,5 +195,40 @@ int main() {
         auto& [filename, img] = work_queue[i];
         img.save_bmp(filename);
     });
+    
+    // Run ffmpeg to create video from images
+    std::cout << "Running ffmpeg to create video..." << std::endl;
+    
+    // Check if ffmpeg is available
+    int ffmpeg_check = std::system("ffmpeg -version >nul 2>&1");
+    if (ffmpeg_check != 0) {
+        std::cout << "Warning: ffmpeg not found in PATH. Please install ffmpeg to create video." << std::endl;
+        std::cout << "Images have been saved in the '" << intermediate_dir << "' directory." << std::endl;
+        return 0;
+    }
+    
+    std::string ffmpeg_cmd;
+    #ifdef _WIN32
+    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i \"" + intermediate_dir + "\\zzz%04d.bmp\" -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
+    #else
+    ffmpeg_cmd = "ffmpeg -y -framerate 30 -i " + intermediate_dir + "/zzz%04d.bmp -c:v libx264 -pix_fmt yuv420p -crf 23 output_video.mp4";
+    #endif
+    
+    std::cout << "Executing: " << ffmpeg_cmd << std::endl;
+    int result = std::system(ffmpeg_cmd.c_str());
+    if (result == 0) {
+        std::cout << "Video created successfully: output_video.mp4" << std::endl;
+    } else {
+        std::cout << "Error creating video with ffmpeg. Exit code: " << result << std::endl;
+        std::cout << "Images have been saved in the '" << intermediate_dir << "' directory." << std::endl;
+    }
+    if (intermediate_dir != ".") {
+        std::filesystem::remove_all(intermediate_dir);
+    } else {
+        for (usize i = 0; i < work_queue.size(); ++i) {
+            std::filesystem::remove(work_queue[i].first);
+        }
+    }
+    
     return 0;
 }

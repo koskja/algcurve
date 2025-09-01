@@ -144,11 +144,11 @@ PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usi
 
 template <typename P>
     requires std::is_base_of_v<OssifiedPolynomial, P>
-Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, OssifiedOffsetPolynomial<P>& poly) {
+Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial<P>& poly) {
     auto& p = powers[granularity];
     auto xpowers = p.get(at.first);
     auto ypowers = p.get(at.second);
-    return poly.template map<double>([&](P pcoeff) -> double { return pcoeff.eval(xpowers, ypowers); });
+    return poly.template map<double>([&](const P& pcoeff) -> double { return pcoeff.eval(xpowers, ypowers); });
 }
 
 /// Check if the polynomial may have a root in the box `[-delta, delta]^2`.
@@ -227,11 +227,11 @@ std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, Ani
             auto type = decide_ossified_polynomial_type(offset_poly);
             if (type == DENSE) {
                 auto dense_poly = offset_poly.map<DenseOssifiedPolynomial>(
-                    [](Polynomial<double, 2> p) -> DenseOssifiedPolynomial { return DenseOssifiedPolynomial(p); });
+                    [](const Polynomial<double, 2>& p) -> DenseOssifiedPolynomial { return DenseOssifiedPolynomial(p); });
                 return render_image(dense_poly, lattices, params.image);
             } else {
                 auto sparse_poly = offset_poly.map<SparseOssifiedPolynomial>(
-                    [](Polynomial<double, 2> p) -> SparseOssifiedPolynomial { return SparseOssifiedPolynomial(p); });
+                    [](const Polynomial<double, 2>& p) -> SparseOssifiedPolynomial { return SparseOssifiedPolynomial(p); });
                 return render_image(sparse_poly, lattices, params.image);
             }
         },

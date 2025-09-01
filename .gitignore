@@ -1,8 +1,6 @@
+.vs
+.vscode
 .cache
 compile_commands.json
-.vscode
-prog
-obj
-*.bmp
-*.gif
+build
 *.mp4
