@@ -106,7 +106,7 @@ PreparedPowers::PreparedPowers(double min, double max, usize n_values, usize max
     parallel_for(
         n_values,
         [&](usize i) {
-            double value = min + i * (max - min) / (double)n_values;
+            double value = n_values <= 1 ? min : (min + i * (max - min) / (double)(n_values - 1));
             auto current_powers = powers.slice_len(i * row_len, row_len);
             get_powers(current_powers, value, max_power + 1, true);
         },
@@ -157,8 +157,9 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
                                   const OssifiedOffsetPolynomial& poly) {
-    auto delta = lattices.width / (2 << granularity);
-    auto delta_powers = std::vector<double>(lattices.max_degree + 1);
+    auto box_width = lattices.width / (1 << granularity);
+    auto delta = box_width / 2;
+    auto delta_powers = std::vector<double>(lattices.max_degree + 2);
     get_powers(delta_powers, delta, delta_powers.size());
     return parallel_map<u8>(
         [&](Point<usize> point) -> u8 {
@@ -187,7 +188,7 @@ render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, I
     assert(params.width == params.height);
     auto img = Texture2D<BlackWhite>(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
-    assert(max_granularity == std::log2(params.width));
+    assert((1 << max_granularity) == params.width);
     auto granularity = 0;
     std::vector<Point<usize>> points = {std::pair<usize, usize>(0, 0)};
     while (granularity < max_granularity) {

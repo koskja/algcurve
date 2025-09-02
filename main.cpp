@@ -118,18 +118,15 @@ int main() {
     std::cin >> expression1 >> expression2;
     auto p1 = parse_expression<2>(expression1);
     auto p2 = parse_expression<2>(expression2);
-    usize width = 1440;
-    usize height = 1440;
-    usize pow2_side = 1u << (usize)std::floor(std::log2((double)width));
-    width = height = pow2_side;
-    auto plane_height = 2.0;
-    auto img_params = ImageParams{width, height};
+    usize width = 1024;
+    auto plane_height = 4.0;
+    auto img_params = ImageParams{width, width};
 
-    usize md1 = std::max<usize>(p1.degree(0), p1.degree(1));
-    usize md2 = std::max<usize>(p2.degree(0), p2.degree(1));
-    usize max_individual_degree = std::max(md1, md2);
+    usize d1 = p1.degree();
+    usize d2 = p2.degree();
+    usize degree = std::max(d1, d2);
     usize max_granularity = (usize)std::log2((double)width);
-    PreparedLattices lattices(-plane_height / 2, plane_height / 2, max_individual_degree, max_granularity);
+    PreparedLattices lattices(-plane_height / 2, plane_height / 2, degree, max_granularity);
 
     std::cout << "Using " << num_threads() << " threads" << std::endl;
     std::map<double, Texture2D<BlackWhite>> interpolation_steps = std::map<double, Texture2D<BlackWhite>>();
@@ -178,7 +175,9 @@ int main() {
         candidate_intervals = new_candidates;
     }
     auto num_images = interpolation_steps.size();
-    auto num_end_reps = 4;
+    auto num_end_reps = 12;
+    // Total number of forward frames (including repeated endpoints)
+    usize forward_frame_count = (num_images - 2) + 2 * num_end_reps;
     std::vector<std::pair<std::string, Texture2D<BlackWhite>&>> work_queue;
     usize i = 0;
     for (auto& [t, img] : interpolation_steps) {
@@ -187,12 +186,13 @@ int main() {
         for (usize j = 0; j < num_reps; ++j) {
             std::string filename_fwd = intermediate_dir + "/zzz" + std::format("{:04}", i) + ".bmp";
             std::string filename_bwd =
-                intermediate_dir + "/zzz" + std::format("{:04}", num_images * 2 + 4 * num_end_reps - i - 1) + ".bmp";
+                intermediate_dir + "/zzz" + std::format("{:04}", 2 * forward_frame_count - i - 1) + ".bmp";
             work_queue.push_back({filename_fwd, img});
             work_queue.push_back({filename_bwd, img});
             ++i;
         }
     }
+    std::cout << "Saving " << work_queue.size() << " images" << std::endl;
     parallel_for(work_queue.size(), [&](usize i) {
         auto& [filename, img] = work_queue[i];
         img.save_bmp(filename);
@@ -202,7 +202,11 @@ int main() {
     std::cout << "Running ffmpeg to create video..." << std::endl;
 
     // Check if ffmpeg is available
+#ifdef _WIN32
     int ffmpeg_check = std::system("ffmpeg -version >nul 2>&1");
+#else
+    int ffmpeg_check = std::system("ffmpeg -version >/dev/null 2>&1");
+#endif
     if (ffmpeg_check != 0) {
         std::cout << "Warning: ffmpeg not found in PATH. Please install ffmpeg to create video." << std::endl;
         std::cout << "Images have been saved in the '" << intermediate_dir << "' directory." << std::endl;
