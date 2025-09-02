@@ -31,8 +31,8 @@ usize get_var_index(char c) {
     throw std::runtime_error("Variable not found");
 }
 
-template <usize NVARS> Polynomial<double, NVARS> parse_ast(ASTNodePtrType node) {
-    auto result = Polynomial<double, NVARS>();
+template <usize NVARS> HashmapPolynomial<double, NVARS> parse_ast(ASTNodePtrType node) {
+    auto result = HashmapPolynomial<double, NVARS>();
     if (node->type == ASTNodeType::Const) {
         result[Monomial<NVARS>()] = std::get<ASTNodeConstType>(node->value);
         return result;
@@ -69,7 +69,7 @@ template <usize NVARS> Polynomial<double, NVARS> parse_ast(ASTNodePtrType node) 
     throw std::runtime_error("Invalid AST node type");
 }
 
-template <usize NVARS> Polynomial<double, NVARS> parse_expression(std::string_view expression) {
+template <usize NVARS> HashmapPolynomial<double, NVARS> parse_expression(std::string_view expression) {
     auto tokens = tokenize(expression);
     auto root = parse_tokens(tokens);
     return parse_ast<NVARS>(std::move(root));
@@ -125,8 +125,8 @@ int main() {
     auto plane_height = 2.0;
     auto img_params = ImageParams{width, height};
 
-    usize md1 = std::max<usize>(p1.max_degree(0), p1.max_degree(1));
-    usize md2 = std::max<usize>(p2.max_degree(0), p2.max_degree(1));
+    usize md1 = std::max<usize>(p1.degree(0), p1.degree(1));
+    usize md2 = std::max<usize>(p2.degree(0), p2.degree(1));
     usize max_individual_degree = std::max(md1, md2);
     usize max_granularity = (usize)std::log2((double)width);
     PreparedLattices lattices(-plane_height / 2, plane_height / 2, max_individual_degree, max_granularity);

@@ -20,6 +20,10 @@ typedef double f64;
 
 typedef i16 exp_t;
 
+#define SIMD_SIZE (512 / 8)
+#define SIMD_ALIGN SIMD_SIZE
+#define SIMD_NUM_VALUES (SIMD_SIZE / sizeof(double))
+
 #ifdef _WIN32
 #define __aligned_alloc(align, size) _aligned_malloc(size, align)
 #define __aligned_free(ptr) _aligned_free(ptr)
@@ -89,6 +93,10 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
 
     const T& operator[](usize idx) const {
         return data[idx];
+    }
+
+    usize len() const {
+        return byte_size / sizeof(T);
     }
 
     std::span<T> slice_len(usize index, usize len) {

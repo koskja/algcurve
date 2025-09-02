@@ -4,9 +4,9 @@
 
 template <typename T> using Point = std::pair<T, T>;
 
-OffsetPolynomial to_offset_polynomial(const Polynomial<double, 2>& poly) {
+OffsetPolynomial to_offset_polynomial(const HashmapPolynomial<double, 2>& poly) {
     // Promote the 2D polynomial p(x, y) to a 4D polynomial p(x, y, z, w)
-    Polynomial<double, 4> p4;
+    HashmapPolynomial<double, 4> p4;
     for (const auto& [mon2, cof] : poly.coefficients) {
         Monomial<4> mon4;
         mon4.exponents[0] = mon2.exponents[0];
@@ -17,12 +17,12 @@ OffsetPolynomial to_offset_polynomial(const Polynomial<double, 2>& poly) {
     }
 
     // Build substitutions: x -> x - z, y -> y - w (z = dx, w = dy)
-    Polynomial<double, 4> xsub;
-    xsub.set(1, 0, 0, 0) = 1.0;  // +x
-    xsub.set(0, 0, 1, 0) = -1.0; // -z
-    Polynomial<double, 4> ysub;
-    ysub.set(0, 1, 0, 0) = 1.0;  // +y
-    ysub.set(0, 0, 0, 1) = -1.0; // -w
+    HashmapPolynomial<double, 4> xsub;
+    xsub.set(Monomial<4>(1, 0, 0, 0), 1.0);  // +x
+    xsub.set(Monomial<4>(0, 0, 1, 0), -1.0); // -z
+    HashmapPolynomial<double, 4> ysub;
+    ysub.set(Monomial<4>(0, 1, 0, 0), 1.0);  // +y
+    ysub.set(Monomial<4>(0, 0, 0, 1), -1.0); // -w
 
     // Apply substitutions
     p4 = p4.substitute(0, xsub);
@@ -45,8 +45,8 @@ OssifiedPolynomialType decide_ossified_polynomial_type(const OffsetPolynomial& p
     usize num_entries = 0;
 
     for (const auto& [_, inner] : poly.coefficients) {
-        usize xdeg = inner.max_degree(0);
-        usize ydeg = inner.max_degree(1);
+        usize xdeg = inner.degree(0);
+        usize ydeg = inner.degree(1);
         usize total_slots = (xdeg + 1) * (ydeg + 1);
         usize used_slots = inner.coefficients.size();
         double fullness = total_slots == 0 ? 0.0 : (double)used_slots / (double)total_slots;
@@ -143,22 +143,20 @@ PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usi
     }
 }
 
-template <typename P>
-    requires std::is_base_of_v<OssifiedPolynomial, P>
-Polynomial<double, 2>
-PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial<P>& poly) {
+HashmapPolynomial<double, 2>
+PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial& poly) {
     auto& p = powers[granularity];
     auto xpowers = p.get(at.first);
     auto ypowers = p.get(at.second);
-    return poly.template map<double>([&](const P& pcoeff) -> double { return pcoeff.eval(xpowers, ypowers); });
+    return poly.map<double>([&](const OssifiedPolynomial<double, 2>& pcoeff) -> double {
+        return std::visit([&](const auto& p) { return p.eval_with_precalculated_powers({xpowers, ypowers}); }, pcoeff);
+    });
 }
 
-template <typename P>
-    requires std::is_base_of_v<OssifiedPolynomial, P>
 std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
-                                  OssifiedOffsetPolynomial<P>& poly) {
+                                  const OssifiedOffsetPolynomial& poly) {
     auto delta = lattices.width / (2 << granularity);
     auto delta_powers = std::vector<double>(lattices.max_degree + 1);
     get_powers(delta_powers, delta, delta_powers.size());
@@ -184,9 +182,8 @@ std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points
     return result;
 }
 
-template <typename P>
-    requires std::is_base_of_v<OssifiedPolynomial, P>
-Texture2D<BlackWhite> render_image(OssifiedOffsetPolynomial<P>& poly, PreparedLattices& lattices, ImageParams& params) {
+Texture2D<BlackWhite>
+render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
     assert(params.width == params.height);
     auto img = Texture2D<BlackWhite>(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
@@ -212,114 +209,18 @@ std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, Ani
             auto offset_poly = to_offset_polynomial(base);
             auto type = decide_ossified_polynomial_type(offset_poly);
             if (type == DENSE) {
-                auto dense_poly = offset_poly.map<DenseOssifiedPolynomial>(
-                    [](const Polynomial<double, 2>& p) -> DenseOssifiedPolynomial {
-                        return DenseOssifiedPolynomial(p);
+                auto dense_poly = offset_poly.map<OssifiedPolynomial<double, 2>>(
+                    [](const HashmapPolynomial<double, 2>& p) -> OssifiedPolynomial<double, 2> {
+                        return DenseOssifiedPolynomial<double, 2>(p);
                     });
                 return render_image(dense_poly, lattices, params.image);
             } else {
-                auto sparse_poly = offset_poly.map<SparseOssifiedPolynomial>(
-                    [](const Polynomial<double, 2>& p) -> SparseOssifiedPolynomial {
-                        return SparseOssifiedPolynomial(p);
+                auto sparse_poly = offset_poly.map<OssifiedPolynomial<double, 2>>(
+                    [](const HashmapPolynomial<double, 2>& p) -> OssifiedPolynomial<double, 2> {
+                        return SparseOssifiedPolynomial<double, 2>(p);
                     });
                 return render_image(sparse_poly, lattices, params.image);
             }
         },
         std::span(params.lambdas));
-}
-
-DenseOssifiedPolynomial::DenseOssifiedPolynomial() {
-    x_degree = 0;
-    y_degree = 0;
-    grid = SimdHeapArray<double, SIMD_ALIGN>();
-}
-
-DenseOssifiedPolynomial::DenseOssifiedPolynomial(Polynomial<double, 2> polynomial) {
-    x_degree = polynomial.max_degree(0);
-    y_degree = polynomial.max_degree(1);
-    const usize xdim = x_degree + 1;
-    const usize ydim = y_degree + 1;
-    const usize total = xdim * ydim;
-    grid = SimdHeapArray<double, SIMD_ALIGN>(total);
-    for (usize i = 0; i < total; ++i) grid[i] = 0.0;
-
-    for (const auto& [monomial, coefficient] : polynomial.coefficients) {
-        const usize xi = static_cast<usize>(monomial.exponents[0]);
-        const usize yi = static_cast<usize>(monomial.exponents[1]);
-        grid[xi * ydim + yi] += coefficient;
-    }
-}
-
-double DenseOssifiedPolynomial::eval(std::span<const double> xpowers, std::span<const double> ypowers) const {
-    // Compute: sum_j xpowers[j] * dot(grid_row_j, ypowers)
-
-    const double *__restrict xp = xpowers.data();
-    const double *__restrict yp = ypowers.data();
-
-    // assert(reinterpret_cast<uintptr_t>(xp) % SIMD_ALIGN == 0 && "xp is not SIMD aligned");
-    // assert(reinterpret_cast<uintptr_t>(yp) % SIMD_ALIGN == 0 && "yp is not SIMD aligned");
-
-    xp = (const double *)__builtin_assume_aligned(xp, SIMD_ALIGN);
-    yp = (const double *)__builtin_assume_aligned(yp, SIMD_ALIGN);
-
-    const usize ydim = y_degree + 1;
-    double total = 0.0;
-    for (usize j = 0; j <= x_degree; ++j) {
-        const double xj = xp[j];
-        const double *__restrict row = &grid[j * ydim];
-        double dot = 0.0;
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#endif
-        for (usize k = 0; k <= y_degree; ++k) {
-            dot += row[k] * yp[k];
-        }
-        total += xj * dot;
-    }
-    return total;
-}
-
-SparseOssifiedPolynomial::SparseOssifiedPolynomial() {}
-
-SparseOssifiedPolynomial::SparseOssifiedPolynomial(Polynomial<double, 2> polynomial) {
-    num_coefficients = polynomial.coefficients.size();
-    coefficients = SimdHeapArray<double, SIMD_ALIGN>(num_coefficients);
-    x_exponents = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
-    y_exponents = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
-    usize i = 0;
-    for (const auto& [monomial, coefficient] : polynomial.coefficients) {
-        coefficients[i] = coefficient;
-        x_exponents[i] = monomial.exponents[0];
-        y_exponents[i] = monomial.exponents[1];
-        i++;
-    }
-}
-
-double SparseOssifiedPolynomial::eval(std::span<const double> xpowers, std::span<const double> ypowers) const {
-    const double *__restrict xp = xpowers.data();
-    const double *__restrict yp = ypowers.data();
-    const double *__restrict cof = coefficients.data;
-    const exp_t *__restrict xe = x_exponents.data;
-    const exp_t *__restrict ye = y_exponents.data;
-
-    // assert(reinterpret_cast<uintptr_t>(xp) % SIMD_ALIGN == 0 && "xp is not SIMD aligned");
-    // assert(reinterpret_cast<uintptr_t>(yp) % SIMD_ALIGN == 0 && "yp is not SIMD aligned");
-    // assert(reinterpret_cast<uintptr_t>(cof) % SIMD_ALIGN == 0 && "coefficients is not SIMD aligned");
-    // assert(reinterpret_cast<uintptr_t>(xe) % SIMD_ALIGN == 0 && "x_exponents is not SIMD aligned");
-    // assert(reinterpret_cast<uintptr_t>(ye) % SIMD_ALIGN == 0 && "y_exponents is not SIMD aligned");
-
-    xp = (const double *)__builtin_assume_aligned(xp, SIMD_ALIGN);
-    yp = (const double *)__builtin_assume_aligned(yp, SIMD_ALIGN);
-    cof = (const double *)__builtin_assume_aligned(cof, SIMD_ALIGN);
-    xe = (const exp_t *)__builtin_assume_aligned(xe, SIMD_ALIGN);
-    ye = (const exp_t *)__builtin_assume_aligned(ye, SIMD_ALIGN);
-
-    double total = 0.0;
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#endif
-    for (usize i = 0; i < num_coefficients; ++i) {
-        total += cof[i] * xp[xe[i]] * yp[ye[i]];
-    }
-    return total;
 }
