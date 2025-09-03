@@ -158,7 +158,7 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   PreparedLattices& lattices,
                                   const OssifiedOffsetPolynomial& poly) {
     auto box_width = lattices.width / (1 << granularity);
-    auto delta = box_width / 2;
+    auto delta = box_width / 4;
     auto num_powers = lattices.max_degree * 2 + 4;
     auto delta_powers = std::vector<double>(num_powers);
     get_powers(delta_powers, delta, delta_powers.size());
@@ -190,7 +190,7 @@ render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, I
     auto img = SparseTexture<2, BlackWhite>(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
     assert((1 << max_granularity) == params.width);
-    auto granularity = 0;
+    usize granularity = 0;
     std::vector<Point<usize>> points = {std::pair<usize, usize>(0, 0)};
     while (granularity < max_granularity) {
         auto viable = are_points_viable(points, granularity, lattices, poly);

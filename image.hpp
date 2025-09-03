@@ -107,7 +107,7 @@ template <usize D, typename P = Triplet> struct Texture {
     }
 
     usize size() const {
-        return std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<usize>());
+        return std::accumulate(dims.begin(), dims.end(), (usize)1, std::multiplies<usize>());
     }
 
     template <typename... Args> constexpr bool in_bounds(Args... _args) const {
@@ -169,8 +169,8 @@ template <usize D, typename P = Triplet> struct Texture {
 
     void write_info_header(std::ostream& os) {
         write<u32>(os, info_header_size); // sizeof BITMAPINFOHEADER
-        write<u32>(os, width);
-        write<u32>(os, height);
+        write<u32>(os, (u32)width);
+        write<u32>(os, (u32)height);
         write<u16>(os, 1);   // planes
         write<u16>(os, 24);  // bits per pixel
         write<u32>(os, 0);   // compression
@@ -183,7 +183,7 @@ template <usize D, typename P = Triplet> struct Texture {
 
     void write_bmp(std::ostream& os) {
         os.write("BM", 2);
-        write<u32>(os, file_header_size + info_header_size + data.size() * 3); // file size
+        write<u32>(os, file_header_size + info_header_size + data.size() * (usize)3); // file size
         write<u32>(os, 0);                                                     // reserved
         write<u32>(os, file_header_size + info_header_size);                   // raster data offset
         write_info_header(os);

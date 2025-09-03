@@ -21,14 +21,18 @@ void parallel_for(usize n, const std::function<void(usize)>& func, usize min_wor
     }
     usize rem_threads = n / min_work_per_thread;
     if (allowed_threads < rem_threads) rem_threads = allowed_threads;
+    usize inherited_threads = allowed_threads - rem_threads;
     std::vector<std::thread> threads;
     usize i = 0;
     while (i < n) {
         usize to_take;
+        usize to_inherit;
         if (rem_threads > 1) {
             to_take = (n - i + rem_threads - 1) / rem_threads;
+            to_inherit = inherited_threads / rem_threads;
         } else {
             to_take = n - i;
+            to_inherit = inherited_threads;
         }
         threads.push_back(spawn_thread(
             [i, to_take, &func]() {
@@ -36,8 +40,9 @@ void parallel_for(usize n, const std::function<void(usize)>& func, usize min_wor
                     func(j);
                 }
             },
-            1));
+            1 + to_inherit));
         i += to_take;
+        inherited_threads -= to_inherit;
         rem_threads -= 1;
     }
     for (auto& thread : threads) {

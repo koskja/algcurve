@@ -30,7 +30,7 @@ else()
   endif()
 endif()
 
-option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" ON)
+option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
 
 # Sources
 set(SRC

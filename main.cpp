@@ -100,7 +100,7 @@ double image_difference(const SparseTexture<2, BlackWhite>& left, const SparseTe
     }
     return (left_not_right + right_not_left) / (double)(keys.size());
 }
-
+ 
 int main() {
     auto max_distance = 0.4;
     usize width = 1024;
@@ -127,8 +127,8 @@ int main() {
     std::cout << "Using " << num_threads() << " threads" << std::endl;
     std::map<double, SparseTexture<2, BlackWhite>> interpolation_steps;
     auto zeroone = std::vector<double>({0.0, 1.0});
-    auto ani_params = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
-    auto images = render_images(lattices, ani_params);
+    auto ani_params0 = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
+    auto images = render_images(lattices, ani_params0);
     interpolation_steps.insert({0.0, std::move(images[0])});
     interpolation_steps.insert({1.0, std::move(images[1])});
     std::vector<std::pair<double, double>> candidate_intervals;

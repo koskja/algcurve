@@ -9,10 +9,10 @@ bool default_may_have_root(const HashmapPolynomial<double, 2>& poly, std::span<d
     for (const auto& [mon, cof] : poly.coefficients) {
         usize degree = mon.degree();
         if (degree == 0) {
-            sum += abs(cof);
+            sum += std::abs(cof);
             continue;
         }
-        sum -= abs(cof) * delta_powers[degree]; // TODO: maybe sum first and multiply afterwards?
+        sum -= std::abs(cof) * delta_powers[degree]; // TODO: maybe sum first and multiply afterwards?
     }
     return sum <= 0;
 }
@@ -69,26 +69,26 @@ bool desingularized_may_have_root(const HashmapPolynomial<double, 2>& f, std::sp
             psis[i].coefficients[psi_mon] += psi_slice.coefficients[j];
         }
     }
-    for (usize i = 1; i <= d2 - 2; ++i) {
-        for (usize j = 0; j + 1 <= i; ++j) {
+    for (usize i = 0; i <= d2 - 2; ++i) {
+        for (usize j = 1; j <= i; ++j) {
             gs[i] -= psis[j] * gs[i - j];
         }
     }
     for (usize i = d2 - 1; i <= d2; ++i) {
-        for (usize j = 0; j <= d2 - 2; ++j) {
+        for (usize j = 1; j <= d2 - 2; ++j) {
             gs[i] -= psis[j] * gs[i - j];
         }
     }
     std::vector<double> cap_gs(d2 + 1);
     for (usize i = 0; i <= d2; ++i) {
         for (const auto& [mon, cof] : gs[i].coefficients) {
-            cap_gs[i] += abs(cof);
+            cap_gs[mon.degree()] += std::abs(cof);
         }
     }
     auto cap_m = 0.0;
     for (usize i = 1; i <= d2 - 2; ++i) {
         for (const auto& [mon, cof] : psis[i].coefficients) {
-            cap_m += abs(cof) * delta_powers[mon.degree()];
+            cap_m += std::abs(cof) * delta_powers[mon.degree()];
         }
     }
     if (cap_m >= 1.0) {
