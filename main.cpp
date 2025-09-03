@@ -7,6 +7,7 @@
 #include <iostream>
 #include <map>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 #include "image.hpp"
@@ -75,32 +76,37 @@ template <usize NVARS> HashmapPolynomial<double, NVARS> parse_expression(std::st
     return parse_ast<NVARS>(std::move(root));
 }
 
-template <typename P> double image_difference(Texture2D<P>& left, Texture2D<P>& right) {
-    assert(left.width == right.width && left.height == right.height);
-    double sum = 0.0;
-    double left_sum = 0.0;
-    double right_sum = 0.0;
-    for (usize y = 0; y < left.height; ++y) {
-        for (usize x = 0; x < left.width; ++x) {
-            auto& l = left(x, y);
-            auto& r = right(x, y);
-            double dr = l.r() - r.r();
-            double dg = l.g() - r.g();
-            double db = l.b() - r.b();
-            sum += dr * dr + dg * dg + db * db;
-            left_sum += l.r() * l.r() + l.g() * l.g() + l.b() * l.b();
-            right_sum += r.r() * r.r() + r.g() * r.g() + r.b() * r.b();
+double image_difference(const SparseTexture<2, BlackWhite>& left, const SparseTexture<2, BlackWhite>& right) {
+    assert(left.dims == right.dims);
+
+    usize left_not_right = 0;
+    usize right_not_left = 0;
+
+    std::unordered_set<usize> keys;
+    for (const auto& [idx, _] : left.data) {
+        keys.insert(idx);
+        if (right.data.find(idx) == right.data.end()) {
+            left_not_right++;
         }
     }
-    double avg = (left_sum + right_sum) / 2;
-    return sum / avg;
+    for (const auto& [idx, _] : right.data) {
+        keys.insert(idx);
+        if (left.data.find(idx) == left.data.end()) {
+            right_not_left++;
+        }
+    }
+    if (keys.empty()) {
+        return 0.0;
+    }
+    return (left_not_right + right_not_left) / (double)(keys.size());
 }
 
 int main() {
-    // Create intermediate folder for images
+    auto max_distance = 0.2;
+    usize width = 1024;
+    auto plane_height = 4.0;
     std::string intermediate_dir = "intermediate_images";
 
-    // Create intermediate directory using std::filesystem
     try {
         std::filesystem::create_directories(intermediate_dir);
     } catch (const std::filesystem::filesystem_error& e) {
@@ -108,28 +114,18 @@ int main() {
                   << std::endl;
         intermediate_dir = ".";
     }
-    // std::string expression = "(x^2+y^2-1)xy(x^2-y^2-1)(y^2-x^2-1)(x^2-y^2)";
-    // std::string expression = "(y^2 + x^2 - 1)^3 - (x^2)*(y^3)";
-    // std::string expression1 = "(x^2+y^2-1)^3-x^2y^3";
-    // std::string expression2 = "(x^2+y^2)^5-(x^4-6x^2y^2+y^4)^2";
-    // std::string expression =
-    // "2.8x^2(x^2(2.5x^2+y^2-2)+1.2y^2(y(3y-0.75)-6.0311)+3.09)+0.98y^2((y^2-3.01)y^2+3)-1.005";
     std::string expression1, expression2;
     std::cin >> expression1 >> expression2;
     auto p1 = parse_expression<2>(expression1);
     auto p2 = parse_expression<2>(expression2);
-    usize width = 1024;
-    auto plane_height = 4.0;
     auto img_params = ImageParams{width, width};
 
-    usize d1 = p1.degree();
-    usize d2 = p2.degree();
-    usize degree = std::max(d1, d2);
+    usize degree = std::max(p1.degree(), p2.degree());
     usize max_granularity = (usize)std::log2((double)width);
     PreparedLattices lattices(-plane_height / 2, plane_height / 2, degree, max_granularity);
 
     std::cout << "Using " << num_threads() << " threads" << std::endl;
-    std::map<double, Texture2D<BlackWhite>> interpolation_steps = std::map<double, Texture2D<BlackWhite>>();
+    std::map<double, SparseTexture<2, BlackWhite>> interpolation_steps;
     auto zeroone = std::vector<double>({0.0, 1.0});
     auto ani_params = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
     auto images = render_images(lattices, ani_params);
@@ -137,7 +133,6 @@ int main() {
     interpolation_steps.insert({1.0, std::move(images[1])});
     std::vector<std::pair<double, double>> candidate_intervals;
     candidate_intervals.push_back({0.0, 1.0});
-    auto max_distance = 0.2;
     while (!candidate_intervals.empty()) {
         auto new_candidates = std::vector<std::pair<double, double>>();
         auto to_render = std::vector<double>();
@@ -169,33 +164,32 @@ int main() {
         auto ani_params = AnimationParams{img_params, p1, p2, std::span(to_render)};
         auto new_images = render_images(lattices, ani_params);
         for (usize i = 0; i < to_render.size(); ++i) {
-            std::pair<double, Texture2D<BlackWhite>> kv = std::pair(to_render[i], std::move(new_images[i]));
+            std::pair<double, SparseTexture<2, BlackWhite>> kv = std::pair(to_render[i], std::move(new_images[i]));
             interpolation_steps.insert(kv);
         }
         candidate_intervals = new_candidates;
     }
     auto num_images = interpolation_steps.size();
     auto num_end_reps = 12;
-    // Total number of forward frames (including repeated endpoints)
     usize forward_frame_count = (num_images - 2) + 2 * num_end_reps;
-    std::vector<std::pair<std::string, Texture2D<BlackWhite>&>> work_queue;
+    std::vector<std::pair<std::string, double>> work_queue;
     usize i = 0;
-    for (auto& [t, img] : interpolation_steps) {
+    for (auto const& [t, img] : interpolation_steps) {
         auto num_reps = 1;
         if (i == 0 || i == num_images + num_end_reps - 2) num_reps = num_end_reps;
         for (usize j = 0; j < num_reps; ++j) {
             std::string filename_fwd = intermediate_dir + "/zzz" + std::format("{:04}", i) + ".bmp";
             std::string filename_bwd =
                 intermediate_dir + "/zzz" + std::format("{:04}", 2 * forward_frame_count - i - 1) + ".bmp";
-            work_queue.push_back({filename_fwd, img});
-            work_queue.push_back({filename_bwd, img});
+            work_queue.push_back({filename_fwd, t});
+            work_queue.push_back({filename_bwd, t});
             ++i;
         }
     }
     std::cout << "Saving " << work_queue.size() << " images" << std::endl;
     parallel_for(work_queue.size(), [&](usize i) {
-        auto& [filename, img] = work_queue[i];
-        img.save_bmp(filename);
+        auto& [filename, t] = work_queue[i];
+        interpolation_steps.at(t).to_dense().save_bmp(filename);
     });
 
     // Run ffmpeg to create video from images

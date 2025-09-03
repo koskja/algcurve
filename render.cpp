@@ -183,10 +183,10 @@ std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points
     return result;
 }
 
-Texture2D<BlackWhite>
+SparseTexture<2, BlackWhite>
 render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
     assert(params.width == params.height);
-    auto img = Texture2D<BlackWhite>(params.width, params.height);
+    auto img = SparseTexture<2, BlackWhite>(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
     assert((1 << max_granularity) == params.width);
     auto granularity = 0;
@@ -202,9 +202,9 @@ render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, I
     return img;
 }
 
-std::vector<Texture2D<BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params) {
+std::vector<SparseTexture<2, BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params) {
     std::cout << "Rendering " << params.lambdas.size() << " images" << std::endl;
-    return parallel_map<Texture2D<BlackWhite>>(
+    return parallel_map<SparseTexture<2, BlackWhite>>(
         [&](double lambda) {
             auto base = params.p1 * lambda + params.p2 * (1 - lambda);
             auto offset_poly = to_offset_polynomial(base);

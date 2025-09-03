@@ -5,6 +5,7 @@
 #include <cassert>
 #include <fstream>
 #include <numeric>
+#include <unordered_map>
 #include <vector>
 
 /// A base class for pixels. The values are all in the range [0.0, 1.0].
@@ -66,7 +67,7 @@ struct Real : Pixel {
 };
 
 struct BlackWhite : Pixel {
-    u8 _v;
+    u8 _v = 0;
     double r() const override {
         return _v;
     }
@@ -209,6 +210,43 @@ template <usize D, typename P = Triplet> struct Texture {
         if (!os) {
             throw std::runtime_error("Failed to close file");
         }
+    }
+};
+
+template <usize D, typename P = Triplet> struct SparseTexture {
+    std::array<usize, D> dims;
+    std::unordered_map<usize, P> data;
+
+    SparseTexture() = default;
+    template <typename... Args> SparseTexture(Args... args) {
+        static_assert(sizeof...(Args) == D, "Number of arguments must match texture dimensions");
+        dims = {static_cast<usize>(args)...};
+    }
+
+    template <typename... Args> constexpr usize to_index(Args... _args) const {
+        std::array<usize, D> args = {static_cast<usize>(_args)...};
+        usize index = 0;
+        usize multiplier = 1;
+        for (usize i = 0; i < D; ++i) {
+            index += args[i] * multiplier;
+            multiplier *= dims[i];
+        }
+        return index;
+    }
+
+    template <typename... Args> P& operator()(Args... args) {
+        return data[to_index(args...)];
+    }
+
+    Texture<D, P> to_dense() const {
+        Texture<D, P> dense_texture;
+        dense_texture.dims = dims;
+        dense_texture.data.resize(dense_texture.size());
+
+        for (const auto& [index, pixel] : data) {
+            dense_texture.data[index] = pixel;
+        }
+        return dense_texture;
     }
 };
 
