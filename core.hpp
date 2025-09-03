@@ -107,9 +107,9 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
     }
 
     std::span<T> slice(usize start, usize end) {
-        return std::span<T>(data + start, end - start);
+        return std::span<T>(data + start, data + end);
     }
     std::span<const T> slice(usize start, usize end) const {
-        return std::span<const T>(data + start, end - start);
+        return std::span<const T>(data + start, data + end);
     }
 };

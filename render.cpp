@@ -159,7 +159,8 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   const OssifiedOffsetPolynomial& poly) {
     auto box_width = lattices.width / (1 << granularity);
     auto delta = box_width / 2;
-    auto delta_powers = std::vector<double>(lattices.max_degree + 2);
+    auto num_powers = lattices.max_degree * 2 + 4;
+    auto delta_powers = std::vector<double>(num_powers);
     get_powers(delta_powers, delta, delta_powers.size());
     return parallel_map<u8>(
         [&](Point<usize> point) -> u8 {

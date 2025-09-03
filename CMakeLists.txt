@@ -30,6 +30,8 @@ else()
   endif()
 endif()
 
+option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" ON)
+
 # Sources
 set(SRC
   main.cpp
@@ -42,11 +44,21 @@ set(SRC
 add_executable(algcurve ${SRC})
 target_include_directories(algcurve PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Sanitizers
+if(ENABLE_SANITIZERS)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(algcurve PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -g)
+        target_link_options(algcurve PRIVATE -fsanitize=address,undefined)
+    elseif(MSVC)
+        # MSVC has /fsanitize=address but it's for VS 2019 16.4+
+        # For now, we do nothing for MSVC.
+    endif()
+endif()
+
 # Common warnings and opts
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   target_compile_options(algcurve PRIVATE
     -Wall -Wextra -Wshadow -Wconversion
-    -ffast-math
   )
 
   # Optimization flags based on build type
@@ -56,7 +68,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       target_compile_options(algcurve PRIVATE -g)
     endif()
   elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(algcurve PRIVATE -O0 -g)
+    target_compile_options(algcurve PRIVATE -O0 -g3)
   endif()
   
   if(NOT WIN32)

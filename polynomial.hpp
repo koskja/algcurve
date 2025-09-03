@@ -217,6 +217,12 @@ template <typename T, usize NVARS> struct HashmapPolynomial {
         }
         return result;
     }
+    HashmapPolynomial<T, NVARS>& operator*=(const T& scalar) {
+        for (auto& [monomial, coefficient] : coefficients) {
+            coefficient *= scalar;
+        }
+        return *this;
+    }
     HashmapPolynomial<T, NVARS> pow(exp_t exponent) const {
         assert(exponent >= 0 && "Exponent must be non-negative");
         if (exponent == 0) {
@@ -426,6 +432,14 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
     std::vector<SparseOssifiedSlice<T, NVARS>> get_single_degree_slices() {
         sort_coeffs();
         std::vector<SparseOssifiedSlice<T, NVARS>> slices;
+
+        if (num_coefficients == 0) {
+            for (exp_t d = 0; d <= _degree; ++d) {
+                slices.push_back(get_slice(0, 0));
+            }
+            return slices;
+        }
+
         exp_t running_degree = 0;
         usize start_index = 0;
         for (usize i = 0; i < num_coefficients; ++i) {
@@ -433,22 +447,28 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
             for (usize v = 0; v < NVARS; ++v) {
                 current_degree += exponents[v][i];
             }
-            if (current_degree != running_degree) {
-                while (current_degree - running_degree > 1) {
-                    // Emit empty slice
-                    slices.push_back(get_slice(start_index, start_index));
-                    running_degree++;
+
+            if (current_degree > running_degree) {
+                slices.push_back(get_slice(start_index, i)); // Slice for running_degree
+
+                // Fill in empty slices for missing degrees
+                for (exp_t d = running_degree + 1; d < current_degree; ++d) {
+                    slices.push_back(get_slice(i, i));
                 }
-                slices.push_back(get_slice(start_index, i));
+
                 start_index = i;
-                assert(current_degree > running_degree);
                 running_degree = current_degree;
             }
         }
-        while (running_degree < _degree) {
-            slices.push_back(get_slice(start_index, start_index));
-            running_degree++;
+
+        // Push the very last slice of coefficients
+        slices.push_back(get_slice(start_index, num_coefficients));
+
+        // Add empty slices up to the polynomial's degree
+        for (exp_t d = running_degree + 1; d <= _degree; ++d) {
+            slices.push_back(get_slice(num_coefficients, num_coefficients));
         }
+
         return slices;
     }
     SparseOssifiedSlice<T, NVARS> get_slice(usize start, usize end) {
@@ -511,6 +531,13 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
 template <typename T, usize NVARS> struct SparseOssifiedSlice {
     std::span<const T> coefficients;
     std::array<std::span<const exp_t>, NVARS> exponents;
+    Monomial<NVARS> get_monomial(usize i) const {
+        Monomial<NVARS> mon;
+        for (usize v = 0; v < NVARS; ++v) {
+            mon.exponents[v] = exponents[v][i];
+        }
+        return mon;
+    }
 };
 
 template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
