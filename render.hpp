@@ -52,6 +52,5 @@ struct PreparedLattices {
     eval(usize granularity, std::pair<usize, usize> at, const OssifiedOffsetPolynomial& poly);
 };
 
-SparseTexture<2, BlackWhite>
-render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
-std::vector<SparseTexture<2, BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params);
+Image render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
+std::vector<Image> render_images(PreparedLattices& lattices, AnimationParams& params);

@@ -25,6 +25,8 @@ def count_all_c_files(directory):
     for root, _, files in os.walk(directory):
         for file in files:
             file_path = os.path.join(root, file)
+            if "build" in file_path:
+                continue
             try:
                 if file.endswith('.c') or file.endswith('.cpp'):
                     lines = count_nonempty_lines(file_path)

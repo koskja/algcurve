@@ -184,10 +184,9 @@ std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points
     return result;
 }
 
-SparseTexture<2, BlackWhite>
-render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
+Image render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
     assert(params.width == params.height);
-    auto img = SparseTexture<2, BlackWhite>(params.width, params.height);
+    auto img = Image(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
     assert((1 << max_granularity) == params.width);
     usize granularity = 0;
@@ -198,14 +197,14 @@ render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, I
         granularity++;
     }
     for (auto& point : points) {
-        img(point.first, point.second).set_v(1);
+        img(point.first, point.second) = {PaletteColor::WHITE};
     }
     return img;
 }
 
-std::vector<SparseTexture<2, BlackWhite>> render_images(PreparedLattices& lattices, AnimationParams& params) {
+std::vector<Image> render_images(PreparedLattices& lattices, AnimationParams& params) {
     std::cout << "Rendering " << params.lambdas.size() << " images" << std::endl;
-    return parallel_map<SparseTexture<2, BlackWhite>>(
+    return parallel_map<Image>(
         [&](double lambda) {
             auto base = params.p1 * lambda + params.p2 * (1 - lambda);
             auto offset_poly = to_offset_polynomial(base);

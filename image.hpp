@@ -1,200 +1,73 @@
 #pragma once
 #include "core.hpp"
-#include "thread.hpp"
 #include <array>
 #include <cassert>
 #include <fstream>
-#include <numeric>
-#include <unordered_map>
 #include <vector>
 
-/// A base class for pixels. The values are all in the range [0.0, 1.0].
-struct Pixel {
-    virtual ~Pixel() = default;
-    virtual double r() const = 0;
-    virtual double g() const = 0;
-    virtual double b() const = 0;
-    virtual void set_r(double r) = 0;
-    virtual void set_g(double g) = 0;
-    virtual void set_b(double b) = 0;
+struct PaletteColor {
+    u8 index;
+
+    static constexpr u8 BLACK = 0;
+    static constexpr u8 BLUE = 1;
+    static constexpr u8 GREEN = 2;
+    static constexpr u8 AQUA = 3;
+    static constexpr u8 RED = 4;
+    static constexpr u8 PURPLE = 5;
+    static constexpr u8 YELLOW = 6;
+    static constexpr u8 WHITE = 7;
+    static constexpr u8 GRAY = 8;
+    static constexpr u8 LIGHT_BLUE = 9;
+    static constexpr u8 LIGHT_GREEN = 10;
+    static constexpr u8 LIGHT_AQUA = 11;
+    static constexpr u8 LIGHT_RED = 12;
+    static constexpr u8 LIGHT_PURPLE = 13;
+    static constexpr u8 LIGHT_YELLOW = 14;
+    static constexpr u8 BRIGHT_WHITE = 15;
 };
 
-struct Triplet : Pixel {
-    double _r, _g, _b;
-    double r() const override {
-        return _r;
-    }
-    double g() const override {
-        return _g;
-    }
-    double b() const override {
-        return _b;
-    }
-    void set_r(double r) override {
-        _r = r;
-    }
-    void set_g(double g) override {
-        _g = g;
-    }
-    void set_b(double b) override {
-        _b = b;
-    }
+struct RGB {
+    u8 r, g, b;
 };
 
-struct Real : Pixel {
-    double _v;
-    double r() const override {
-        return _v;
-    }
-    double g() const override {
-        return _v;
-    }
-    double b() const override {
-        return _v;
-    }
-    void set_r(double r) override {
-        _v = r;
-    }
-    void set_g(double g) override {
-        _v = g;
-    }
-    void set_b(double b) override {
-        _v = b;
-    }
-    void set_v(double v) {
-        _v = v;
-    }
-};
+constexpr std::array<RGB, 16> a_palette = {{
+    {0, 0, 0},       // BLACK
+    {0, 0, 128},     // BLUE
+    {0, 128, 0},     // GREEN
+    {0, 128, 128},   // AQUA
+    {128, 0, 0},     // RED
+    {128, 0, 128},   // PURPLE
+    {128, 128, 0},   // YELLOW
+    {192, 192, 192}, // WHITE
+    {128, 128, 128}, // GRAY
+    {0, 0, 255},     // LIGHT_BLUE
+    {0, 255, 0},     // LIGHT_GREEN
+    {0, 255, 255},   // LIGHT_AQUA
+    {255, 0, 0},     // LIGHT_RED
+    {255, 0, 255},   // LIGHT_PURPLE
+    {255, 255, 0},   // LIGHT_YELLOW
+    {255, 255, 255}  // BRIGHT_WHITE
+}};
 
-struct BlackWhite : Pixel {
-    u8 _v = 0;
-    double r() const override {
-        return _v;
-    }
-    double g() const override {
-        return _v;
-    }
-    double b() const override {
-        return _v;
-    }
-    void set_r(double r) override {
-        _v = r == 0.0 ? 0 : 1;
-    }
-    void set_g(double g) override {
-        _v = g == 0.0 ? 0 : 1;
-    }
-    void set_b(double b) override {
-        _v = b == 0.0 ? 0 : 1;
-    }
-    void set_v(u8 v) {
-        _v = v;
-    }
-};
+struct Image {
+    Image() : _width(0), _height(0), _data(0) {}
+    Image(usize width, usize height) : _width(width), _height(height), _data(width * height, {PaletteColor::BLACK}) {}
 
-template <usize D, typename P = Triplet> struct Texture {
-    union {
-        std::array<usize, D> dims;
-        struct {
-            usize width, height, depth;
-        };
-    };
-    std::vector<P> data;
-    Texture() = default;
-    template <typename... Args> Texture(Args... args) {
-        static_assert(sizeof...(Args) == D, "Number of arguments must match texture dimensions");
-        dims = {static_cast<usize>(args)...};
-        data.resize(size());
+    PaletteColor& operator()(usize x, usize y) {
+        assert(x < _width && y < _height);
+        return _data[y * _width + x];
     }
 
-    usize size() const {
-        return std::accumulate(dims.begin(), dims.end(), (usize)1, std::multiplies<usize>());
+    const PaletteColor& operator()(usize x, usize y) const {
+        assert(x < _width && y < _height);
+        return _data[y * _width + x];
     }
 
-    template <typename... Args> constexpr bool in_bounds(Args... _args) const {
-        std::array<usize, D> args = {static_cast<usize>(_args)...};
-        for (usize i = 0; i < D; ++i) {
-            if (args[i] >= dims[i]) {
-                return false;
-            }
-        }
-        return true;
+    usize width() const {
+        return _width;
     }
-
-    template <typename... Args> constexpr usize to_index(Args... _args) const {
-        std::array<usize, D> args = {static_cast<usize>(_args)...};
-        usize index = 0;
-        usize multiplier = 1;
-        for (usize i = 0; i < D; ++i) {
-            index += args[i] * multiplier;
-            multiplier *= dims[i];
-        }
-        return index;
-    }
-
-    template <typename Iter> void overwrite(Iter begin, Iter end) {
-        if (std::distance(begin, end) != size()) {
-            throw std::runtime_error("Iterator range size does not match image dimensions");
-        }
-        std::copy(begin, end, data.begin());
-    }
-
-    Texture<D + 1, P> expand(usize ndimsize, std::function<void(P, std::span<P>)> func) {
-        Texture<D + 1, P> result;
-        result.dims[0] = ndimsize;
-        for (usize i = 0; i < D; ++i) {
-            result.dims[i + 1] = dims[i];
-        }
-        result.data.resize(result.size());
-        parallel_for(
-            result.size(), [&](usize i) { func(result.data[i], result.data.subspan(i * ndimsize, ndimsize)); }, 1);
-        return result;
-    }
-
-    template <typename... Args> P& operator()(Args... args) {
-        assert(in_bounds(args...));
-        return data[to_index(args...)];
-    }
-
-    template <typename... Args> const P& operator()(Args... args) const {
-        assert(in_bounds(args...));
-        return data[to_index(args...)];
-    }
-
-    static constexpr u32 info_header_size = 40;
-    static constexpr u32 file_header_size = 14;
-
-    template <typename T> void write(std::ostream& os, T value) {
-        os.write(reinterpret_cast<const char *>(&value), sizeof(T));
-    }
-
-    void write_info_header(std::ostream& os) {
-        write<u32>(os, info_header_size); // sizeof BITMAPINFOHEADER
-        write<u32>(os, (u32)width);
-        write<u32>(os, (u32)height);
-        write<u16>(os, 1);   // planes
-        write<u16>(os, 24);  // bits per pixel
-        write<u32>(os, 0);   // compression
-        write<u32>(os, 0);   // image size; 0 for uncompressed
-        write<u32>(os, 512); // x resolution
-        write<u32>(os, 512); // y resolution
-        write<u32>(os, 0);   // colors used; default
-        write<u32>(os, 0);   // important colors; default
-    }
-
-    void write_bmp(std::ostream& os) {
-        os.write("BM", 2);
-        write<u32>(os, file_header_size + info_header_size + data.size() * (usize)3); // file size
-        write<u32>(os, 0);                                                     // reserved
-        write<u32>(os, file_header_size + info_header_size);                   // raster data offset
-        write_info_header(os);
-        for (isize y = height - 1; y >= 0; --y) {
-            for (isize x = 0; x < width; ++x) {
-                auto& pixel = (*this)(x, y);
-                write<u8>(os, pixel.b() * 255);
-                write<u8>(os, pixel.g() * 255);
-                write<u8>(os, pixel.r() * 255);
-            }
-        }
+    usize height() const {
+        return _height;
     }
 
     void save_bmp(std::string_view filename) {
@@ -202,56 +75,90 @@ template <usize D, typename P = Triplet> struct Texture {
         if (!os) {
             throw std::runtime_error("Failed to open file for writing: " + std::string(filename));
         }
-        write_bmp(os);
+
+        std::vector<u8> compressed_data = rle8_compress();
+
+        const u32 file_header_size = 14;
+        const u32 info_header_size = 40;
+        const u32 palette_size = 256 * 4;
+        const u32 pixel_data_offset = file_header_size + info_header_size + palette_size;
+        const u32 file_size = pixel_data_offset + compressed_data.size();
+
+        // File Header
+        os.write("BM", 2);
+        write<u32>(os, file_size);
+        write<u32>(os, 0); // Reserved
+        write<u32>(os, pixel_data_offset);
+
+        // Info Header
+        write<u32>(os, info_header_size);
+        write<u32>(os, (u32)_width);
+        write<u32>(os, (u32)_height);
+        write<u16>(os, 1); // Planes
+        write<u16>(os, 8); // Bits per pixel
+        write<u32>(os, 1); // BI_RLE8 compression
+        write<u32>(os, (u32)compressed_data.size());
+        write<u32>(os, 2835); // X pixels per meter (72 DPI)
+        write<u32>(os, 2835); // Y pixels per meter (72 DPI)
+        write<u32>(os, 256);  // Colors used
+        write<u32>(os, 256);  // Important colors
+
+        // Color Table
+        for (const auto& color : a_palette) {
+            write<u8>(os, color.b);
+            write<u8>(os, color.g);
+            write<u8>(os, color.r);
+            write<u8>(os, 0); // Reserved
+        }
+        // Pad palette to 256 colors
+        for (usize i = a_palette.size(); i < 256; ++i) {
+            write<u8>(os, 0);
+            write<u8>(os, 0);
+            write<u8>(os, 0);
+            write<u8>(os, 0);
+        }
+
+        // Pixel Data
+        os.write(reinterpret_cast<const char *>(compressed_data.data()), compressed_data.size());
+
         if (!os) {
             throw std::runtime_error("Failed to write BMP data");
         }
-        os.close();
-        if (!os) {
-            throw std::runtime_error("Failed to close file");
+    }
+
+  private:
+    usize _width, _height;
+    std::vector<PaletteColor> _data;
+
+    template <typename T> void write(std::ostream& os, T value) {
+        os.write(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+
+    std::vector<u8> rle8_compress() const {
+        std::vector<u8> compressed;
+        for (isize y = _height - 1; y >= 0; --y) {
+            std::vector<u8> row_data;
+            isize x = 0;
+            while (x < _width) {
+                isize run_length = 1;
+                while (x + run_length < _width && run_length < 255 &&
+                       (*this)(x + run_length, y).index == (*this)(x, y).index) {
+                    run_length++;
+                }
+
+                u8 index = (*this)(x, y).index;
+                row_data.push_back(run_length);
+                row_data.push_back(index);
+                x += run_length;
+            }
+            row_data.push_back(0); // End of line
+            row_data.push_back(0);
+            compressed.insert(compressed.end(), row_data.begin(), row_data.end());
         }
+
+        compressed.push_back(0); // End of bitmap
+        compressed.push_back(1);
+
+        return compressed;
     }
 };
-
-template <usize D, typename P = Triplet> struct SparseTexture {
-    std::array<usize, D> dims;
-    std::unordered_map<usize, P> data;
-
-    SparseTexture() = default;
-    template <typename... Args> SparseTexture(Args... args) {
-        static_assert(sizeof...(Args) == D, "Number of arguments must match texture dimensions");
-        dims = {static_cast<usize>(args)...};
-    }
-
-    template <typename... Args> constexpr usize to_index(Args... _args) const {
-        std::array<usize, D> args = {static_cast<usize>(_args)...};
-        usize index = 0;
-        usize multiplier = 1;
-        for (usize i = 0; i < D; ++i) {
-            index += args[i] * multiplier;
-            multiplier *= dims[i];
-        }
-        return index;
-    }
-
-    template <typename... Args> P& operator()(Args... args) {
-        return data[to_index(args...)];
-    }
-
-    Texture<D, P> to_dense() const {
-        Texture<D, P> dense_texture;
-        dense_texture.dims = dims;
-        dense_texture.data.resize(dense_texture.size());
-
-        for (const auto& [index, pixel] : data) {
-            dense_texture.data[index] = pixel;
-        }
-        return dense_texture;
-    }
-};
-
-template <typename P = Triplet> using Texture1D = Texture<1, P>;
-
-template <typename P = Triplet> using Texture2D = Texture<2, P>;
-
-template <typename P = Triplet> using Texture3D = Texture<3, P>;

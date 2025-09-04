@@ -7,7 +7,6 @@
 #include <iostream>
 #include <map>
 #include <span>
-#include <unordered_set>
 #include <vector>
 
 #include "image.hpp"
@@ -76,29 +75,28 @@ template <usize NVARS> HashmapPolynomial<double, NVARS> parse_expression(std::st
     return parse_ast<NVARS>(std::move(root));
 }
 
-double image_difference(const SparseTexture<2, BlackWhite>& left, const SparseTexture<2, BlackWhite>& right) {
-    assert(left.dims == right.dims);
+double image_difference(const Image& left, const Image& right) {
+    assert(left.width() == right.width() && left.height() == right.height());
 
-    usize left_not_right = 0;
-    usize right_not_left = 0;
-
-    std::unordered_set<usize> keys;
-    for (const auto& [idx, _] : left.data) {
-        keys.insert(idx);
-        if (right.data.find(idx) == right.data.end()) {
-            left_not_right++;
+    usize diff_pixels = 0;
+    usize total_pixels = 0;
+    for (usize y = 0; y < left.height(); ++y) {
+        for (usize x = 0; x < left.width(); ++x) {
+            if (left(x, y).index != right(x, y).index) {
+                diff_pixels++;
+            }
+            if (left(x, y).index != PaletteColor::BLACK) {
+                total_pixels++;
+            }
+            if (right(x, y).index != PaletteColor::BLACK) {
+                total_pixels++;
+            }
         }
     }
-    for (const auto& [idx, _] : right.data) {
-        keys.insert(idx);
-        if (left.data.find(idx) == left.data.end()) {
-            right_not_left++;
-        }
-    }
-    if (keys.empty()) {
+    if (total_pixels == 0) {
         return 0.0;
     }
-    return (left_not_right + right_not_left) / (double)(keys.size());
+    return (double)diff_pixels / (double)total_pixels / 2;
 }
 
 int main() {
@@ -125,7 +123,7 @@ int main() {
     PreparedLattices lattices(-plane_height / 2, plane_height / 2, degree, max_granularity);
 
     std::cout << "Using " << num_threads() << " threads" << std::endl;
-    std::map<double, SparseTexture<2, BlackWhite>> interpolation_steps;
+    std::map<double, Image> interpolation_steps;
     auto zeroone = std::vector<double>({0.0, 1.0});
     auto ani_params0 = AnimationParams{img_params, p1, p2, std::span<double>(zeroone)};
     auto images = render_images(lattices, ani_params0);
@@ -153,7 +151,7 @@ int main() {
             auto [left, right] = candidate_intervals[i];
             auto distance = distances[i];
             if (distance > max_current_distance) max_current_distance = distance;
-            if (distance > max_distance && right - left > 4 * std::numeric_limits<double>::epsilon()) {
+            if (distance > max_distance && right - left > std::numeric_limits<double>::epsilon()) {
                 auto midpoint = (left + right) / 2;
                 to_render.push_back(midpoint);
                 new_candidates.emplace_back(left, midpoint);
@@ -164,7 +162,7 @@ int main() {
         auto ani_params = AnimationParams{img_params, p1, p2, std::span(to_render)};
         auto new_images = render_images(lattices, ani_params);
         for (usize i = 0; i < to_render.size(); ++i) {
-            std::pair<double, SparseTexture<2, BlackWhite>> kv = std::pair(to_render[i], std::move(new_images[i]));
+            std::pair<double, Image> kv = std::pair(to_render[i], std::move(new_images[i]));
             interpolation_steps.insert(kv);
         }
         candidate_intervals = new_candidates;
@@ -189,7 +187,7 @@ int main() {
     std::cout << "Saving " << work_queue.size() << " images" << std::endl;
     parallel_for(work_queue.size(), [&](usize i) {
         auto& [filename, t] = work_queue[i];
-        interpolation_steps.at(t).to_dense().save_bmp(filename);
+        interpolation_steps.at(t).save_bmp(filename);
     });
 
     // Run ffmpeg to create video from images
