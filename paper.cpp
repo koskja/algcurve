@@ -46,6 +46,8 @@ bool desingularized_may_have_root(const HashmapPolynomial<double, 2>& f, std::sp
     assert(psi_slices.size() == (d2 - 1));
     std::vector<HashmapPolynomial<double, 2>> gs(d2 + 1);
     std::vector<HashmapPolynomial<double, 2>> psis(d2 - 1);
+    phi *= MAGIC_CONSTANT;
+    psi *= MAGIC_CONSTANT;
     auto psi0 = psi.coefficients[Monomial<2>(0, 0)];
     if (psi0 == 0) {
         return true;

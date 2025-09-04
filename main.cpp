@@ -100,11 +100,11 @@ double image_difference(const SparseTexture<2, BlackWhite>& left, const SparseTe
     }
     return (left_not_right + right_not_left) / (double)(keys.size());
 }
- 
+
 int main() {
     auto max_distance = 0.4;
-    usize width = 1024;
-    auto plane_height = 4.0;
+    usize width = 2048;
+    auto plane_height = 2.0;
     std::string intermediate_dir = "intermediate_images";
 
     try {

@@ -158,7 +158,7 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   PreparedLattices& lattices,
                                   const OssifiedOffsetPolynomial& poly) {
     auto box_width = lattices.width / (1 << granularity);
-    auto delta = box_width / 4;
+    auto delta = box_width / 2 * DELTA_FACTOR;
     auto num_powers = lattices.max_degree * 2 + 4;
     auto delta_powers = std::vector<double>(num_powers);
     get_powers(delta_powers, delta, delta_powers.size());
