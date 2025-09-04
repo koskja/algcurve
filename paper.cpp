@@ -50,9 +50,7 @@ bool desingularized_may_have_root(const HashmapPolynomial<double, 2>& f, std::sp
     if (psi0 == 0) {
         return true;
     }
-    // g = phi / psi, this does not change the function and sets the constant term of psi to 1
-    psi *= 1.0 / psi0;
-    phi *= 1.0 / psi0;
+    auto ipsi0 = 1.0 / psi0;
     for (usize i = 0; i <= d2; ++i) {
         auto phi_slice = phi_slices[i];
         for (usize j = 0; j < phi_slice.coefficients.size(); ++j) {
@@ -73,11 +71,13 @@ bool desingularized_may_have_root(const HashmapPolynomial<double, 2>& f, std::sp
         for (usize j = 1; j <= i; ++j) {
             gs[i] -= psis[j] * gs[i - j];
         }
+        gs[i] *= ipsi0;
     }
     for (usize i = d2 - 1; i <= d2; ++i) {
         for (usize j = 1; j <= d2 - 2; ++j) {
             gs[i] -= psis[j] * gs[i - j];
         }
+        gs[i] *= ipsi0;
     }
     std::vector<double> cap_gs(d2 + 1);
     for (usize i = 0; i <= d2; ++i) {
@@ -85,10 +85,11 @@ bool desingularized_may_have_root(const HashmapPolynomial<double, 2>& f, std::sp
             cap_gs[mon.degree()] += std::abs(cof);
         }
     }
+    assert(cap_gs[0] == std::abs(ipsi0 * phi.coefficients[Monomial<2>(0, 0)]));
     auto cap_m = 0.0;
     for (usize i = 1; i <= d2 - 2; ++i) {
         for (const auto& [mon, cof] : psis[i].coefficients) {
-            cap_m += std::abs(cof) * delta_powers[mon.degree()];
+            cap_m += std::abs(cof * ipsi0) * delta_powers[mon.degree()];
         }
     }
     if (cap_m >= 1.0) {
