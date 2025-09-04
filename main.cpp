@@ -104,7 +104,7 @@ double image_difference(const SparseTexture<2, BlackWhite>& left, const SparseTe
 int main() {
     auto max_distance = 0.4;
     usize width = 2048;
-    auto plane_height = 2.0;
+    auto plane_height = 4.0;
     std::string intermediate_dir = "intermediate_images";
 
     try {
