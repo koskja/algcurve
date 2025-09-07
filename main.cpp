@@ -99,8 +99,23 @@ double image_difference(const Image& left, const Image& right) {
     return (double)diff_pixels / (double)total_pixels / 2;
 }
 
+static void draw_progress_bar(Image& img, double lambda) {
+    double clamped = std::clamp(lambda, 0.0, 1.0);
+    int width = static_cast<int>(img.width());
+    int height = static_cast<int>(img.height());
+    int bar_height = std::max(10, height / 300);
+    int bar_width = static_cast<int>(std::round(width * clamped));
+    if (bar_width < 0) bar_width = 0;
+    if (bar_width > width) bar_width = width;
+    for (int y = height - bar_height; y < height; ++y) {
+        for (int x = 0; x < bar_width; ++x) {
+            img(static_cast<usize>(x), static_cast<usize>(y)) = {PaletteColor::LIGHT_RED};
+        }
+    }
+}
+
 int main() {
-    auto max_distance = 0.4;
+    auto max_distance = 0.1;
     usize width = 2048;
     auto plane_height = 4.0;
     std::string intermediate_dir = "intermediate_images";
@@ -167,6 +182,10 @@ int main() {
         }
         candidate_intervals = new_candidates;
     }
+    parallel_for(interpolation_steps.size(), [&](usize i) {
+        auto it = std::next(interpolation_steps.begin(), i);
+        draw_progress_bar(it->second, it->first);
+    });
     auto num_images = interpolation_steps.size();
     auto num_end_reps = 12;
     usize forward_frame_count = (num_images - 2) + 2 * num_end_reps;
