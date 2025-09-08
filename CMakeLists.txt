@@ -1,38 +1,27 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 
-# Project
 project(algcurve LANGUAGES CXX)
 
-# Default to Release if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Option to include debug symbols in release builds
-option(INCLUDE_DEBUG_SYMBOLS "Include debug symbols in release builds" OFF)
-set(INCLUDE_DEBUG_SYMBOLS ON)
+option(INCLUDE_DEBUG_SYMBOLS "Include debug symbols")
+option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers")
+option(FRAME_POINTERS "Enable frame pointers")
 
-# Require C++23
-set(CMAKE_CXX_STANDARD 23)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(ENABLE_SANITIZERS ON)
+    set(INCLUDE_DEBUG_SYMBOLS ON)
+endif()
+if(ENABLE_SANITIZERS OR INCLUDE_DEBUG_SYMBOLS)
+    set(FRAME_POINTERS ON)
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Compiler selection: favor Clang
-if(WIN32)
-  # On Windows we prefer clang-cl with MSVC-like command line (works with VS IDE)
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
-    message(STATUS "If you want clang-cl, configure with -T clangcl or use the clang-cl preset.")
-  endif()
-else()
-  # On non-Windows we prefer clang++
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    message(STATUS "Consider configuring with CXX=clang++ for consistent behavior.")
-  endif()
-endif()
-
-option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
-
-# Sources
 set(SRC
   main.cpp
   input.cpp
@@ -44,60 +33,49 @@ set(SRC
 add_executable(algcurve ${SRC})
 target_include_directories(algcurve PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Sanitizers
-if(ENABLE_SANITIZERS)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        target_compile_options(algcurve PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -g)
-        target_link_options(algcurve PRIVATE -fsanitize=address,undefined)
-    elseif(MSVC)
-        # MSVC has /fsanitize=address but it's for VS 2019 16.4+
-        # For now, we do nothing for MSVC.
-    endif()
-endif()
-
-# Common warnings and opts
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(algcurve PRIVATE
     -Wall -Wextra -Wshadow -Wconversion
   )
-
-  # Optimization flags based on build type
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(algcurve PRIVATE -O3)
-    if(INCLUDE_DEBUG_SYMBOLS)
-      target_compile_options(algcurve PRIVATE -g)
-    endif()
   elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(algcurve PRIVATE -O0 -g3)
+    target_compile_options(algcurve PRIVATE -O0)
+  endif()
+  if(INCLUDE_DEBUG_SYMBOLS)
+    target_compile_options(algcurve PRIVATE -g3)
+  endif()
+  if(FRAME_POINTERS)
+      target_compile_options(algcurve PRIVATE -fno-omit-frame-pointer)
+  endif()
+  if(ENABLE_SANITIZERS)
+    target_compile_options(algcurve PRIVATE -fsanitize=address,undefined)
+    target_link_options(algcurve PRIVATE -fsanitize=address,undefined)
   endif()
   
   if(NOT WIN32)
     target_compile_options(algcurve PRIVATE -march=native)
   endif()
 elseif(MSVC)
-  # If building with MSVC (or clang-cl under MSVC), use corresponding flags
   target_compile_options(algcurve PRIVATE /W4)
-  
-  # Optimization flags based on build type
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(algcurve PRIVATE /O2)
-    if(INCLUDE_DEBUG_SYMBOLS)
-      target_compile_options(algcurve PRIVATE /Zi)
-    endif()
+    target_compile_options(algcurve PRIVATE /Ox)
   elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(algcurve PRIVATE /Od /Zi)
+    target_compile_options(algcurve PRIVATE /Od)
+  endif()
+  if(INCLUDE_DEBUG_SYMBOLS)
+    target_compile_options(algcurve PRIVATE /Zi)
+  endif()
+  if(ENABLE_SANITIZERS)
+    target_compile_options(algcurve PRIVATE /fsanitize=address)
+    target_link_options(algcurve PRIVATE /fsanitize=address)
   endif()
 endif()
 
-# Defines/compat per platform
-if(WIN32)
-  # Nothing special for Windows yet; link libraries if needed later
-else()
-  # Link libm explicitly on Unix-like
+if(NOT WIN32)
   target_link_libraries(algcurve PRIVATE m)
 endif()
 
-# Enable compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
