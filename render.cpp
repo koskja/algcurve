@@ -4,6 +4,19 @@
 
 template <typename T> using Point = std::pair<T, T>;
 
+enum OssifiedPolynomialType { DENSE, SPARSE };
+
+template <typename T> OssifiedPolynomialType decide_ossified_polynomial_type(const HashmapPolynomial<T, 2>& poly) {
+    return SPARSE;
+    if (poly.coefficients.empty()) return SPARSE;
+    auto xdeg = poly.degree(0);
+    auto ydeg = poly.degree(1);
+    auto num_entries = 0;
+    poly.iterate([&](const Monomial<2>& mon, const T& cof) { num_entries += 1; });
+    auto max_entries = (xdeg + 1) * (ydeg + 1);
+    return num_entries * 2 > max_entries ? DENSE : SPARSE;
+}
+
 OffsetPolynomial to_offset_polynomial(const HashmapPolynomial<double, 2>& poly) {
     // Promote the 2D polynomial p(x, y) to a 4D polynomial p(x, y, z, w)
     HashmapPolynomial<double, 4> p4;
@@ -31,31 +44,24 @@ OffsetPolynomial to_offset_polynomial(const HashmapPolynomial<double, 2>& poly) 
     // Unnest inner variables (dx=z at index 2, dy=w at index 3 -> becomes index 2 after first unnest)
     auto nested_once = p4.unnest_inner(2);           // split out z
     auto nested_twice = nested_once.unnest_inner(2); // split out w (now at index 2)
-
     // Merge the two 1D inner polys (z and w) into a single 2D inner poly (dx, dy)
-    return merge_coeffs<double, 2>(nested_twice);
-}
-
-enum OssifiedPolynomialType { DENSE, SPARSE };
-
-OssifiedPolynomialType decide_ossified_polynomial_type(const OffsetPolynomial& poly) {
-    if (poly.coefficients.empty()) return SPARSE;
-
-    double total_fullness = 0.0;
-    usize num_entries = 0;
-
-    for (const auto& [_, inner] : poly.coefficients) {
-        usize xdeg = inner.degree(0);
-        usize ydeg = inner.degree(1);
-        usize total_slots = (xdeg + 1) * (ydeg + 1);
-        usize used_slots = inner.coefficients.size();
-        double fullness = total_slots == 0 ? 0.0 : (double)used_slots / (double)total_slots;
-        total_fullness += fullness;
-        num_entries += 1;
+    auto merged = merge_coeffs<double, 2>(nested_twice);
+    auto ty = decide_ossified_polynomial_type(merged);
+    auto ret = merged.map<Polynomial<double, 2>>([](const HashmapPolynomial<double, 2>& p) -> Polynomial<double, 2> {
+        auto local_ty = decide_ossified_polynomial_type(p);
+        if (local_ty == DENSE) {
+            return Polynomial(DenseOssifiedPolynomial<double, 2>(p));
+        } else if (local_ty == SPARSE) {
+            return Polynomial(SparseOssifiedPolynomial<double, 2>(p));
+        }
+        return Polynomial(p);
+    });
+    if (ty == DENSE) {
+        return Polynomial(DenseOssifiedPolynomial<Polynomial<double, 2>, 2>(ret));
+    } else if (ty == SPARSE) {
+        return Polynomial(SparseOssifiedPolynomial<Polynomial<double, 2>, 2>(ret));
     }
-
-    double average_fullness = num_entries == 0 ? 0.0 : total_fullness / (double)num_entries;
-    return average_fullness > 0.5 ? DENSE : SPARSE;
+    return Polynomial(ret);
 }
 
 template <typename T> usize align_to_simd(usize x) {
@@ -143,20 +149,19 @@ PreparedLattices::PreparedLattices(double min, double max, usize max_degree, usi
     }
 }
 
-HashmapPolynomial<double, 2>
-PreparedLattices::eval(usize granularity, Point<usize> at, const OssifiedOffsetPolynomial& poly) {
+Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at, const OffsetPolynomial& poly) {
     auto& p = powers[granularity];
     auto xpowers = p.get(at.first);
     auto ypowers = p.get(at.second);
-    return poly.map<double>([&](const OssifiedPolynomial<double, 2>& pcoeff) -> double {
-        return std::visit([&](const auto& p) { return p.eval_with_precalculated_powers({xpowers, ypowers}); }, pcoeff);
+    return poly.map<double>([&](const Polynomial<double, 2>& pcoeff) -> double {
+        return pcoeff.eval_with_precalculated_powers({xpowers, ypowers});
     });
 }
 
 std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
-                                  const OssifiedOffsetPolynomial& poly) {
+                                  const OffsetPolynomial& poly) {
     auto box_width = lattices.width / (1 << granularity);
     auto delta = box_width / 2 * DELTA_FACTOR;
     auto num_powers = lattices.max_degree * 2 + 4;
@@ -184,7 +189,7 @@ std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points
     return result;
 }
 
-Image render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
+Image render_image(const OffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params) {
     assert(params.width == params.height);
     auto img = Image(params.width, params.height);
     auto max_granularity = lattices.powers.size() - 1;
@@ -208,20 +213,7 @@ std::vector<Image> render_images(PreparedLattices& lattices, AnimationParams& pa
         [&](double lambda) {
             auto base = params.p1 * lambda + params.p2 * (1 - lambda);
             auto offset_poly = to_offset_polynomial(base);
-            auto type = decide_ossified_polynomial_type(offset_poly);
-            if (type == DENSE) {
-                auto dense_poly = offset_poly.map<OssifiedPolynomial<double, 2>>(
-                    [](const HashmapPolynomial<double, 2>& p) -> OssifiedPolynomial<double, 2> {
-                        return DenseOssifiedPolynomial<double, 2>(p);
-                    });
-                return render_image(dense_poly, lattices, params.image);
-            } else {
-                auto sparse_poly = offset_poly.map<OssifiedPolynomial<double, 2>>(
-                    [](const HashmapPolynomial<double, 2>& p) -> OssifiedPolynomial<double, 2> {
-                        return SparseOssifiedPolynomial<double, 2>(p);
-                    });
-                return render_image(sparse_poly, lattices, params.image);
-            }
+            return render_image(offset_poly, lattices, params.image);
         },
         std::span(params.lambdas));
 }

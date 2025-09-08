@@ -5,8 +5,15 @@
 #include <thread>
 #include <vector>
 
+// When running parallel_for, we sometimes spawn less threads than the number
+// of available threads (at start, the same as the number of CPU cores).
+// To allow the spawned threads to split their work further, we split the unassigned threads
+// between the spawned threads.
+
+/// Get the number of threads available to the current thread.
 usize num_threads();
 
+/// Spawn a thread to run `func`. The thread will have `_allowed_threads` threads available to it.
 std::thread spawn_thread(const std::function<void()>& func, usize _allowed_threads);
 
 /// Run the function `func` for each index from 0 to `n - 1`.

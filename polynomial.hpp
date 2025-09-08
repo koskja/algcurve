@@ -148,20 +148,25 @@ template <typename T, usize NVARS> struct HashmapPolynomial {
         }
         return result;
     }
+    void iterate(const std::function<void(const Monomial<NVARS>&, const T&)>& func) const {
+        for (const auto& [monomial, coefficient] : coefficients) {
+            func(monomial, coefficient);
+        }
+    }
     template <typename U> HashmapPolynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
         HashmapPolynomial<U, NVARS> result;
-        for (const auto& [monomial, coefficient] : coefficients) {
+        iterate([&](const Monomial<NVARS>& monomial, const T& coefficient) {
             result.coefficients.emplace(std::make_pair(monomial, func(coefficient)));
-        }
+        });
         return result;
     }
     template <typename U>
     HashmapPolynomial<U, NVARS>
     map_with_exponent(const std::function<U(const Monomial<NVARS>&, const T&)>& func) const {
         HashmapPolynomial<U, NVARS> result;
-        for (const auto& [monomial, coefficient] : coefficients) {
+        iterate([&](const Monomial<NVARS>& monomial, const T& coefficient) {
             result.coefficients.emplace(std::make_pair(monomial, func(monomial, coefficient)));
-        }
+        });
         return result;
     }
     HashmapPolynomial<T, NVARS> partial_derivative(usize variable) const {
@@ -526,6 +531,39 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
         }
         return result;
     }
+    void iterate(const std::function<void(const Monomial<NVARS>&, const T&)>& func) const {
+        usize num_coefficients = coefficients.size();
+        for (usize i = 0; i < num_coefficients; ++i) {
+            Monomial<NVARS> mon;
+            for (usize v = 0; v < NVARS; ++v) {
+                mon.exponents[v] = exponents[v][i];
+            }
+            func(mon, coefficients[i]);
+        }
+    }
+    template <typename U> SparseOssifiedPolynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
+        SparseOssifiedPolynomial<U, NVARS> result;
+        result.coefficients = SimdHeapArray<U, SIMD_ALIGN>(coefficients.size());
+        for (usize i = 0; i < NVARS; ++i) {
+            result.exponents[i] = SimdHeapArray<exp_t, SIMD_ALIGN>(exponents[i].size());
+        }
+        auto num_coefficients = coefficients.size();
+        for (usize i = 0; i < num_coefficients; ++i) {
+            Monomial<NVARS> mon;
+            for (usize v = 0; v < NVARS; ++v) {
+                mon.exponents[v] = exponents[v][i];
+            }
+            auto val = func(coefficients[i]);
+            result.coefficients[i] = val;
+            for (usize v = 0; v < NVARS; ++v) {
+                result.exponents[v][i] = exponents[v][i];
+            }
+        }
+        result._degree = this->_degree;
+        result._degrees_per_var = this->_degrees_per_var;
+        result.sorted = false;
+        return result;
+    }
 };
 
 template <typename T, usize NVARS> struct SparseOssifiedSlice {
@@ -557,7 +595,6 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
         }
 
         grid = SimdHeapArray<T, SIMD_ALIGN>(total_size);
-        for (usize i = 0; i < total_size; ++i) grid[i] = T{0};
 
         std::array<usize, NVARS> strides;
         if constexpr (NVARS > 0) {
@@ -572,7 +609,7 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
             for (usize i = 0; i < NVARS; ++i) {
                 index += monomial.exponents[i] * strides[i];
             }
-            grid[index] += coefficient;
+            grid[index] = coefficient;
         }
     }
 
@@ -590,9 +627,9 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
     }
 
     T eval_with_precalculated_powers(std::array<std::span<const T>, NVARS> powers) const {
-        if (grid.len() == 0) return T{0};
+        if (grid.size() == 0) return T{0};
 
-        if constexpr (NVARS == 0) return grid.len() > 0 ? grid[0] : T{0};
+        if constexpr (NVARS == 0) return grid.size() > 0 ? grid[0] : T{0};
 
         if constexpr (NVARS == 1) {
             T total = T{0};
@@ -638,7 +675,7 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
 
     HashmapPolynomial<T, NVARS> to_hashmap() const {
         HashmapPolynomial<T, NVARS> result;
-        if (grid.len() == 0) return result;
+        if (grid.size() == 0) return result;
         std::array<exp_t, NVARS> current_exponents;
         current_exponents.fill(0);
 
@@ -670,6 +707,40 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
         recurse(0);
         return result;
     }
+    usize to_index(std::array<exp_t, NVARS> indices) const {
+        usize index = 0;
+        for (usize i = 0; i < NVARS; ++i) {
+            index += indices[i] * (this->_degrees_per_var[i] + 1);
+        }
+        return index;
+    }
+    void iterate(const std::function<void(const Monomial<NVARS>&, const T&)>& func) const {
+        std::array<exp_t, NVARS> indices;
+        indices.fill(0);
+        while (true) {
+            func(Monomial<NVARS>(indices), grid[to_index(indices)]);
+            indices[0]++;
+            for (usize i = 0; i < NVARS; ++i) {
+                if (indices[i] > _degrees_per_var[i]) {
+                    indices[i] = 0;
+                    if (i == NVARS - 1) {
+                        return;
+                    }
+                    indices[i + 1]++;
+                }
+            }
+        }
+    }
+    template <typename U> DenseOssifiedPolynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
+        DenseOssifiedPolynomial<U, NVARS> result;
+        result.grid = SimdHeapArray<U, SIMD_ALIGN>(this->grid.size());
+        for (usize i = 0; i < this->grid.size(); ++i) {
+            result.grid[i] = func(this->grid[i]);
+        }
+        result._degree = this->_degree;
+        result._degrees_per_var = this->_degrees_per_var;
+        return result;
+    }
 };
 
 template <typename T, usize NDIM>
@@ -697,6 +768,7 @@ template <typename T, usize NVARS> struct Polynomial {
     std::variant<HashmapPolynomial<T, NVARS>, SparseOssifiedPolynomial<T, NVARS>, DenseOssifiedPolynomial<T, NVARS>>
         poly;
 
+    Polynomial() : poly(HashmapPolynomial<T, NVARS>{}) {}
     Polynomial(HashmapPolynomial<T, NVARS> p) : poly(std::move(p)) {}
     Polynomial(SparseOssifiedPolynomial<T, NVARS> p) : poly(std::move(p)) {}
     Polynomial(DenseOssifiedPolynomial<T, NVARS> p) : poly(std::move(p)) {}
@@ -771,5 +843,11 @@ template <typename T, usize NVARS> struct Polynomial {
     }
     operator std::string() const {
         return std::visit([](const auto& p) { return std::string(p); }, poly);
+    }
+    void iterate(const std::function<void(const Monomial<NVARS>&, const T&)>& func) const {
+        return std::visit([&](const auto& p) { p.iterate(func); }, poly);
+    }
+    template <typename U> Polynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
+        return std::visit([&](const auto& p) { return Polynomial<U, NVARS>(p.map(func)); }, poly);
     }
 };

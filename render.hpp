@@ -30,14 +30,7 @@ struct PreparedPowers {
     std::span<const double> get(usize index) const;
 };
 
-template <typename T, usize NVARS>
-using OssifiedPolynomialVariant = std::variant<SparseOssifiedPolynomial<T, NVARS>, DenseOssifiedPolynomial<T, NVARS>>;
-
-template <typename T, usize NVARS>
-using OssifiedPolynomial = std::variant<SparseOssifiedPolynomial<T, NVARS>, DenseOssifiedPolynomial<T, NVARS>>;
-
-using OssifiedOffsetPolynomial = HashmapPolynomial<OssifiedPolynomial<double, 2>, 2>;
-using OffsetPolynomial = HashmapPolynomial<HashmapPolynomial<double, 2>, 2>;
+using OffsetPolynomial = Polynomial<Polynomial<double, 2>, 2>;
 
 /// A container for precalculated data for offsetting a polynomial (calculating the substitution p(x, y) -> p(x - dx, y
 /// - dy)). The specific calculation required for checking for roots of a polynomial (`may_have_root`) is done by
@@ -48,9 +41,8 @@ struct PreparedLattices {
     usize max_degree;
     double width;
     PreparedLattices(double min, double max, usize max_degree, usize max_granularity);
-    HashmapPolynomial<double, 2>
-    eval(usize granularity, std::pair<usize, usize> at, const OssifiedOffsetPolynomial& poly);
+    Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, const OffsetPolynomial& poly);
 };
 
-Image render_image(const OssifiedOffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
+Image render_image(const OffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
 std::vector<Image> render_images(PreparedLattices& lattices, AnimationParams& params);
