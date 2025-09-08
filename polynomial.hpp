@@ -19,6 +19,9 @@
 
 char get_var_name(usize i);
 
+/// A monomial in NVARS variables.
+/// The field `exponents` stores the exponents of the variables, i. e.
+/// the monomial of `exponents = {1, 2, 3}` is `x^1 * y^2 * z^3`.
 template <usize NVARS> struct Monomial {
     std::array<exp_t, NVARS> exponents;
     constexpr Monomial() : exponents() {}
@@ -101,6 +104,7 @@ template <usize NVARS> struct std::hash<Monomial<NVARS>> {
     }
 };
 
+/// A polynomial represented as a map from monomials to coefficients.
 template <typename T, usize NVARS> struct HashmapPolynomial {
     std::unordered_map<Monomial<NVARS>, T> coefficients;
     T *get(const Monomial<NVARS>& monomial) {
@@ -137,6 +141,8 @@ template <typename T, usize NVARS> struct HashmapPolynomial {
         }
         return result;
     }
+    /// Evaluate the polynomial using precalculated powers.
+    /// `powers[i]` is the span of the powers of the `i`-th variable.
     T eval_with_precalculated_powers(std::array<std::span<const T>, NVARS> powers) const {
         T result = 0;
         for (const auto& [monomial, coefficient] : coefficients) {

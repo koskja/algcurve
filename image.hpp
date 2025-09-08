@@ -49,27 +49,74 @@ constexpr std::array<RGB, 16> a_palette = {{
     {255, 255, 255}  // BRIGHT_WHITE
 }};
 
-struct Image {
-    Image() : _width(0), _height(0), _data(0) {}
-    Image(usize width, usize height) : _width(width), _height(height), _data(width * height, {PaletteColor::BLACK}) {}
+/// A 2D image with a preset palette.
+class Image {
+    usize m_width;
+    usize m_height;
+    std::vector<PaletteColor> m_data;
+
+    template <typename T> void write(std::ostream& os, T value) {
+        os.write(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+
+    /// Compress the image data using RLE8 compression.
+    /// See:
+    /// https://learn.microsoft.com/en-us/windows/win32/gdi/bitmap-compression
+    /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wmf/b64d0c0b-bb80-4b53-8382-f38f264eb685
+    std::vector<u8> rle8_compress() const {
+        std::vector<u8> compressed;
+        for (isize y = m_height - 1; y >= 0; --y) {
+            std::vector<u8> row_data;
+            isize x = 0;
+            while (x < m_width) {
+                isize run_length = 1;
+                // Runs cannot cross line boundaries.
+                while (x + run_length < m_width && run_length < 255 &&
+                       (*this)(x + run_length, y).index == (*this)(x, y).index) {
+                    run_length++;
+                }
+
+                u8 index = (*this)(x, y).index;
+                row_data.push_back(run_length);
+                row_data.push_back(index);
+                x += run_length;
+            }
+            row_data.push_back(0); // End of line
+            row_data.push_back(0);
+            compressed.insert(compressed.end(), row_data.begin(), row_data.end());
+        }
+
+        compressed.push_back(0); // End of bitmap
+        compressed.push_back(1);
+
+        return compressed;
+    }
+
+  public:
+    Image() : m_width(0), m_height(0), m_data(0) {}
+    Image(usize width, usize height)
+        : m_width(width), m_height(height), m_data(width * height, {PaletteColor::BLACK}) {}
 
     PaletteColor& operator()(usize x, usize y) {
-        assert(x < _width && y < _height);
-        return _data[y * _width + x];
+        assert(x < m_width && y < m_height);
+        return m_data[y * m_width + x];
     }
 
     const PaletteColor& operator()(usize x, usize y) const {
-        assert(x < _width && y < _height);
-        return _data[y * _width + x];
+        assert(x < m_width && y < m_height);
+        return m_data[y * m_width + x];
     }
 
     usize width() const {
-        return _width;
+        return m_width;
     }
     usize height() const {
-        return _height;
+        return m_height;
     }
 
+    /// Save the image to a BMP file, using RLE8 compression.
+    /// See:
+    /// https://en.wikipedia.org/wiki/BMP_file_format
     void save_bmp(std::string_view filename) {
         std::ofstream os(filename.data(), std::ios::binary);
         if (!os) {
@@ -92,8 +139,8 @@ struct Image {
 
         // Info Header
         write<u32>(os, info_header_size);
-        write<u32>(os, (u32)_width);
-        write<u32>(os, (u32)_height);
+        write<u32>(os, (u32)m_width);
+        write<u32>(os, (u32)m_height);
         write<u16>(os, 1); // Planes
         write<u16>(os, 8); // Bits per pixel
         write<u32>(os, 1); // BI_RLE8 compression
@@ -124,41 +171,5 @@ struct Image {
         if (!os) {
             throw std::runtime_error("Failed to write BMP data");
         }
-    }
-
-  private:
-    usize _width, _height;
-    std::vector<PaletteColor> _data;
-
-    template <typename T> void write(std::ostream& os, T value) {
-        os.write(reinterpret_cast<const char *>(&value), sizeof(T));
-    }
-
-    std::vector<u8> rle8_compress() const {
-        std::vector<u8> compressed;
-        for (isize y = _height - 1; y >= 0; --y) {
-            std::vector<u8> row_data;
-            isize x = 0;
-            while (x < _width) {
-                isize run_length = 1;
-                while (x + run_length < _width && run_length < 255 &&
-                       (*this)(x + run_length, y).index == (*this)(x, y).index) {
-                    run_length++;
-                }
-
-                u8 index = (*this)(x, y).index;
-                row_data.push_back(run_length);
-                row_data.push_back(index);
-                x += run_length;
-            }
-            row_data.push_back(0); // End of line
-            row_data.push_back(0);
-            compressed.insert(compressed.end(), row_data.begin(), row_data.end());
-        }
-
-        compressed.push_back(0); // End of bitmap
-        compressed.push_back(1);
-
-        return compressed;
     }
 };

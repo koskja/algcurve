@@ -1,9 +1,6 @@
 #include "paper.hpp"
 #include "polynomial.hpp"
 
-/// Check if the polynomial may have a root in the box `[-delta, delta]^2`.
-/// Returns false if it is CERTAIN that the polynomial DOES NOT have a root in the box.
-/// Returns true if it is POSSIBLE that the polynomial DOES HAVE a root in the box.
 bool default_may_have_root(const Polynomial<double, 2>& poly, std::span<double> delta_powers) {
     double sum = 0;
     poly.iterate([&](const Monomial<2>& mon, const double& cof) {

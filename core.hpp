@@ -32,69 +32,74 @@ typedef i16 exp_t;
 #define __aligned_free(ptr) std::free(ptr)
 #endif
 
-template <typename T, usize ALIGN> struct SimdHeapArray {
-    T *data;
-    usize byte_size;
-    usize public_size;
-    SimdHeapArray() : data(nullptr), byte_size(0), public_size(0) {}
+/// A fixed-size container of data of type `T` that is aligned to `ALIGN`.
+/// `T` must be default constructible, but may be non-trivial to destroy/copy/move.
+template <typename T, usize ALIGN> class SimdHeapArray {
+    T *m_data;
+    usize m_byte_size;
+    usize m_public_size;
+
+    void destroy_data() {
+        if (!m_data) return;
+        for (usize i = 0; i < m_public_size; ++i) {
+            m_data[i].~T();
+        }
+        __aligned_free(m_data);
+        m_data = nullptr;
+        m_byte_size = 0;
+        m_public_size = 0;
+    }
+
+  public:
+    SimdHeapArray() : m_data(nullptr), m_byte_size(0), m_public_size(0) {}
     SimdHeapArray(usize size) {
         auto bytes = size * sizeof(T);
         auto aligned_bytes = (bytes + (ALIGN - 1)) & ~(ALIGN - 1);
-        byte_size = aligned_bytes;
-        public_size = size;
+        m_byte_size = aligned_bytes;
+        m_public_size = size;
         if (aligned_bytes == 0) {
-            data = nullptr;
+            m_data = nullptr;
         } else {
-            data = (T *)__aligned_alloc(ALIGN, aligned_bytes);
+            m_data = (T *)__aligned_alloc(ALIGN, aligned_bytes);
             for (usize i = 0; i < size; ++i) {
-                new (&data[i]) T{};
+                new (&m_data[i]) T{};
             }
         }
     }
     usize size() const {
-        return public_size;
+        return m_public_size;
     }
     SimdHeapArray(const SimdHeapArray& other) {
-        if (other.byte_size == 0) {
-            data = nullptr;
-            byte_size = 0;
-            public_size = 0;
+        if (other.m_byte_size == 0) {
+            m_data = nullptr;
+            m_byte_size = 0;
+            m_public_size = 0;
         } else {
-            byte_size = other.byte_size;
-            public_size = other.public_size;
-            data = (T *)__aligned_alloc(ALIGN, other.byte_size);
+            m_byte_size = other.m_byte_size;
+            m_public_size = other.m_public_size;
+            m_data = (T *)__aligned_alloc(ALIGN, other.m_byte_size);
             for (usize i = 0; i < other.size(); ++i) {
-                new (&data[i]) T{other.data[i]};
+                new (&m_data[i]) T{other.m_data[i]};
             }
         }
     }
-    void destroy_data() {
-        if (!data) return;
-        for (usize i = 0; i < public_size; ++i) {
-            data[i].~T();
-        }
-        __aligned_free(data);
-        data = nullptr;
-        byte_size = 0;
-        public_size = 0;
-    }
     SimdHeapArray(SimdHeapArray&& other) noexcept
-        : data(other.data), byte_size(other.byte_size), public_size(other.public_size) {
-        other.data = nullptr;
-        other.byte_size = 0;
-        other.public_size = 0;
+        : m_data(other.m_data), m_byte_size(other.m_byte_size), m_public_size(other.m_public_size) {
+        other.m_data = nullptr;
+        other.m_byte_size = 0;
+        other.m_public_size = 0;
     }
     SimdHeapArray& operator=(const SimdHeapArray& other) {
         if (this == &other) return *this;
         destroy_data();
-        if (other.byte_size == 0) {
+        if (other.m_byte_size == 0) {
             return *this;
         }
-        byte_size = other.byte_size;
-        public_size = other.public_size;
-        data = (T *)__aligned_alloc(ALIGN, other.byte_size);
+        m_byte_size = other.m_byte_size;
+        m_public_size = other.m_public_size;
+        m_data = (T *)__aligned_alloc(ALIGN, other.m_byte_size);
         for (usize i = 0; i < other.size(); ++i) {
-            new (&data[i]) T{other.data[i]};
+            new (&m_data[i]) T{other.m_data[i]};
         }
         return *this;
     }
@@ -103,36 +108,33 @@ template <typename T, usize ALIGN> struct SimdHeapArray {
             return *this;
         }
         destroy_data();
-        data = other.data;
-        byte_size = other.byte_size;
-        public_size = other.public_size;
-        other.data = nullptr;
-        other.byte_size = 0;
-        other.public_size = 0;
+        m_data = other.m_data;
+        m_byte_size = other.m_byte_size;
+        m_public_size = other.m_public_size;
+        other.m_data = nullptr;
+        other.m_byte_size = 0;
+        other.m_public_size = 0;
         return *this;
     }
     ~SimdHeapArray() {
         destroy_data();
     }
     T& operator[](usize idx) {
-        return data[idx];
+        return m_data[idx];
     }
-
     const T& operator[](usize idx) const {
-        return data[idx];
+        return m_data[idx];
     }
-
     std::span<T> slice_len(usize index, usize len) {
-        return std::span<T>(data + index, len);
+        return std::span<T>(m_data + index, len);
     }
     std::span<const T> slice_len(usize index, usize len) const {
-        return std::span<const T>(data + index, len);
+        return std::span<const T>(m_data + index, len);
     }
-
     std::span<T> slice(usize start, usize end) {
-        return std::span<T>(data + start, data + end);
+        return std::span<T>(m_data + start, m_data + end);
     }
     std::span<const T> slice(usize start, usize end) const {
-        return std::span<const T>(data + start, data + end);
+        return std::span<const T>(m_data + start, m_data + end);
     }
 };
