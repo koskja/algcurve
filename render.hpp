@@ -21,7 +21,7 @@ void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_sim
 struct PreparedPowers {
     usize num_rows;
     usize row_len;
-    SimdHeapArray<double, SIMD_ALIGN> powers;
+    SimdHeapArray<double> powers;
     PreparedPowers();
     static PreparedPowers from_values(std::span<double> values, usize max_power);
     static PreparedPowers from_range(double min, double max, usize n_values, usize max_power);

@@ -367,8 +367,8 @@ template <typename T, usize NVARS> struct SparseOssifiedSlice;
 /// This representation is efficient for sparse polynomials (polynomials with few non-zero coefficients).
 /// Once created, it is immutable. The exponents are stored as an array of structures.
 template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
-    SimdHeapArray<T, SIMD_ALIGN> coefficients;
-    std::array<SimdHeapArray<exp_t, SIMD_ALIGN>, NVARS> exponents;
+    SimdHeapArray<T> coefficients;
+    std::array<SimdHeapArray<exp_t>, NVARS> exponents;
     usize num_coefficients;
     exp_t _degree;
     bool sorted;
@@ -380,9 +380,9 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
     }
     SparseOssifiedPolynomial(const HashmapPolynomial<T, NVARS>& polynomial) {
         num_coefficients = polynomial.coefficients.size();
-        coefficients = SimdHeapArray<T, SIMD_ALIGN>(num_coefficients);
+        coefficients = SimdHeapArray<T>(num_coefficients);
         for (size_t i = 0; i < NVARS; ++i) {
-            exponents[i] = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
+            exponents[i] = SimdHeapArray<exp_t>(num_coefficients);
         }
 
         _degree = 0;
@@ -426,10 +426,10 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
             return false;
         });
 
-        SimdHeapArray<T, SIMD_ALIGN> new_coefficients(num_coefficients);
-        std::array<SimdHeapArray<exp_t, SIMD_ALIGN>, NVARS> new_exponents;
+        SimdHeapArray<T> new_coefficients(num_coefficients);
+        std::array<SimdHeapArray<exp_t>, NVARS> new_exponents;
         for (usize v = 0; v < NVARS; ++v) {
-            new_exponents[v] = SimdHeapArray<exp_t, SIMD_ALIGN>(num_coefficients);
+            new_exponents[v] = SimdHeapArray<exp_t>(num_coefficients);
         }
 
         for (usize i = 0; i < num_coefficients; ++i) {
@@ -552,9 +552,9 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
     }
     template <typename U> SparseOssifiedPolynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
         SparseOssifiedPolynomial<U, NVARS> result;
-        result.coefficients = SimdHeapArray<U, SIMD_ALIGN>(coefficients.size());
+        result.coefficients = SimdHeapArray<U>(coefficients.size());
         for (usize i = 0; i < NVARS; ++i) {
-            result.exponents[i] = SimdHeapArray<exp_t, SIMD_ALIGN>(exponents[i].size());
+            result.exponents[i] = SimdHeapArray<exp_t>(exponents[i].size());
         }
         auto num_coefficients = coefficients.size();
         for (usize i = 0; i < num_coefficients; ++i) {
@@ -592,8 +592,8 @@ template <typename T, usize NVARS> struct SparseOssifiedSlice {
 /// degree). Once created, it is immutable.
 template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
     std::array<exp_t, NVARS> _degrees_per_var;
-    exp_t _degree; // Need to calculate this
-    SimdHeapArray<T, SIMD_ALIGN> grid;
+    exp_t _degree;
+    SimdHeapArray<T> grid;
 
     DenseOssifiedPolynomial() : _degree(0) {
         _degrees_per_var.fill(0);
@@ -606,7 +606,7 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
             total_size *= (_degrees_per_var[i] + 1);
         }
 
-        grid = SimdHeapArray<T, SIMD_ALIGN>(total_size);
+        grid = SimdHeapArray<T>(total_size);
 
         std::array<usize, NVARS> strides;
         if constexpr (NVARS > 0) {
@@ -745,7 +745,7 @@ template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
     }
     template <typename U> DenseOssifiedPolynomial<U, NVARS> map(const std::function<U(const T&)>& func) const {
         DenseOssifiedPolynomial<U, NVARS> result;
-        result.grid = SimdHeapArray<U, SIMD_ALIGN>(this->grid.size());
+        result.grid = SimdHeapArray<U>(this->grid.size());
         for (usize i = 0; i < this->grid.size(); ++i) {
             result.grid[i] = func(this->grid[i]);
         }

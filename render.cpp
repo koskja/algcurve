@@ -111,7 +111,7 @@ PreparedPowers PreparedPowers::from_range(double min, double max, usize n_values
 
 PreparedPowers::PreparedPowers(double min, double max, usize n_values, usize max_power) : num_rows(n_values) {
     row_len = align_to_simd<double>(max_power + 1);
-    powers = SimdHeapArray<double, SIMD_ALIGN>(row_len * n_values);
+    powers = SimdHeapArray<double>(row_len * n_values);
     parallel_for(
         n_values,
         [&](usize i) {
@@ -124,7 +124,7 @@ PreparedPowers::PreparedPowers(double min, double max, usize n_values, usize max
 
 PreparedPowers::PreparedPowers(std::span<double> values, usize max_power) : num_rows(values.size()) {
     row_len = align_to_simd<double>(max_power + 1);
-    powers = SimdHeapArray<double, SIMD_ALIGN>(row_len * values.size());
+    powers = SimdHeapArray<double>(row_len * values.size());
     parallel_for(
         values.size(),
         [&](usize i) {

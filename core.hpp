@@ -32,9 +32,9 @@ typedef i16 exp_t;
 #define __aligned_free(ptr) std::free(ptr)
 #endif
 
-/// A fixed-size container of data of type `T` that is aligned to `ALIGN`.
+/// A fixed-size container of data of type `T` that is aligned to `SIMD_ALIGN`.
 /// `T` must be default constructible, but may be non-trivial to destroy/copy/move.
-template <typename T, usize ALIGN> class SimdHeapArray {
+template <typename T> class SimdHeapArray {
     T *m_data;
     usize m_byte_size;
     usize m_public_size;
@@ -54,13 +54,13 @@ template <typename T, usize ALIGN> class SimdHeapArray {
     SimdHeapArray() : m_data(nullptr), m_byte_size(0), m_public_size(0) {}
     SimdHeapArray(usize size) {
         auto bytes = size * sizeof(T);
-        auto aligned_bytes = (bytes + (ALIGN - 1)) & ~(ALIGN - 1);
+        auto aligned_bytes = (bytes + (SIMD_ALIGN - 1)) & ~(SIMD_ALIGN - 1);
         m_byte_size = aligned_bytes;
         m_public_size = size;
         if (aligned_bytes == 0) {
             m_data = nullptr;
         } else {
-            m_data = (T *)__aligned_alloc(ALIGN, aligned_bytes);
+            m_data = (T *)__aligned_alloc(SIMD_ALIGN, aligned_bytes);
             for (usize i = 0; i < size; ++i) {
                 new (&m_data[i]) T{};
             }
@@ -77,7 +77,7 @@ template <typename T, usize ALIGN> class SimdHeapArray {
         } else {
             m_byte_size = other.m_byte_size;
             m_public_size = other.m_public_size;
-            m_data = (T *)__aligned_alloc(ALIGN, other.m_byte_size);
+            m_data = (T *)__aligned_alloc(SIMD_ALIGN, other.m_byte_size);
             for (usize i = 0; i < other.size(); ++i) {
                 new (&m_data[i]) T{other.m_data[i]};
             }
@@ -97,7 +97,7 @@ template <typename T, usize ALIGN> class SimdHeapArray {
         }
         m_byte_size = other.m_byte_size;
         m_public_size = other.m_public_size;
-        m_data = (T *)__aligned_alloc(ALIGN, other.m_byte_size);
+        m_data = (T *)__aligned_alloc(SIMD_ALIGN, other.m_byte_size);
         for (usize i = 0; i < other.size(); ++i) {
             new (&m_data[i]) T{other.m_data[i]};
         }
