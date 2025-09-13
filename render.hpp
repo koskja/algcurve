@@ -12,7 +12,7 @@ struct AnimationParams {
     std::span<double> lambdas;
 };
 
-usize align_to_simd(usize x);
+/// Calculate the powers of `x` up to `n - 1`.
 void get_powers(std::span<double> powers, double x, usize n, bool aligned_to_simd = false);
 
 /// A container for precalculated powers of a list of values.
@@ -30,6 +30,8 @@ struct PreparedPowers {
     std::span<const double> get(usize index) const;
 };
 
+/// A polynomial with 2 variables (x, y) whose coefficients are polynomials with 2 variables (dx, dy).
+/// Used for representing p(x - dx, y - dy).
 using OffsetPolynomial = Polynomial<Polynomial<double, 2>, 2>;
 
 /// A container for precalculated data for offsetting a polynomial (calculating the substitution p(x, y) -> p(x - dx, y
@@ -44,5 +46,7 @@ struct PreparedLattices {
     Polynomial<double, 2> eval(usize granularity, std::pair<usize, usize> at, const OffsetPolynomial& poly);
 };
 
+/// Render a single image of a polynomial.
 Image render_image(const OffsetPolynomial& poly, PreparedLattices& lattices, ImageParams& params);
+/// Render a sequence of images to create an animation.
 std::vector<Image> render_images(PreparedLattices& lattices, AnimationParams& params);

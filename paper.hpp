@@ -5,7 +5,12 @@
 // #define DESINGULARIZED_ROOT_CHECK
 #define MAGIC_CONSTANT 20.0
 
+/// Check if a polynomial MAY have a root in [-delta, delta]^2.
+/// The default implementation.
 bool default_may_have_root(const Polynomial<double, 2>& poly, std::span<double> delta_powers);
+
+/// Check if a polynomial MAY have a root in [-delta, delta]^2.
+/// The desingularized implementation.
 bool desingularized_may_have_root(const Polynomial<double, 2>& poly, std::span<double> delta_powers);
 
 #ifdef DESINGULARIZED_ROOT_CHECK

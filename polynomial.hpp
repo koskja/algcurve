@@ -363,6 +363,9 @@ template <typename T, usize NVARS> struct SparseOssifiedPolynomial;
 template <typename T, usize NVARS> struct DenseOssifiedPolynomial;
 template <typename T, usize NVARS> struct SparseOssifiedSlice;
 
+/// A polynomial represented by a list of coefficients and corresponding exponents.
+/// This representation is efficient for sparse polynomials (polynomials with few non-zero coefficients).
+/// Once created, it is immutable. The exponents are stored as an array of structures.
 template <typename T, usize NVARS> struct SparseOssifiedPolynomial {
     SimdHeapArray<T, SIMD_ALIGN> coefficients;
     std::array<SimdHeapArray<exp_t, SIMD_ALIGN>, NVARS> exponents;
@@ -584,6 +587,9 @@ template <typename T, usize NVARS> struct SparseOssifiedSlice {
     }
 };
 
+/// A polynomial represented by a dense grid of coefficients.
+/// This representation is efficient for dense polynomials (polynomials with many non-zero coefficients up to a certain
+/// degree). Once created, it is immutable.
 template <typename T, usize NVARS> struct DenseOssifiedPolynomial {
     std::array<exp_t, NVARS> _degrees_per_var;
     exp_t _degree; // Need to calculate this
@@ -770,6 +776,8 @@ merge_coeffs(HashmapPolynomial<HashmapPolynomial<HashmapPolynomial<T, 1>, 1>, ND
     return result;
 }
 
+/// A variant that can hold a `HashmapPolynomial`, `SparseOssifiedPolynomial`, or `DenseOssifiedPolynomial`.
+/// It provides a unified interface for polynomial operations.
 template <typename T, usize NVARS> struct Polynomial {
     std::variant<HashmapPolynomial<T, NVARS>, SparseOssifiedPolynomial<T, NVARS>, DenseOssifiedPolynomial<T, NVARS>>
         poly;

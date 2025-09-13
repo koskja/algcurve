@@ -17,6 +17,8 @@ template <typename T> OssifiedPolynomialType decide_ossified_polynomial_type(con
     return num_entries * 2 > max_entries ? DENSE : SPARSE;
 }
 
+/// Convert a polynomial p(x, y) to an offset polynomial p(x - dx, y - dy).
+/// The resulting polynomial has 2 variables (x, y) and its coefficients are polynomials in 2 variables (dx, dy).
 OffsetPolynomial to_offset_polynomial(const HashmapPolynomial<double, 2>& poly) {
     // Promote the 2D polynomial p(x, y) to a 4D polynomial p(x, y, z, w)
     HashmapPolynomial<double, 4> p4;
@@ -64,6 +66,7 @@ OffsetPolynomial to_offset_polynomial(const HashmapPolynomial<double, 2>& poly) 
     return Polynomial(ret);
 }
 
+/// Align a value up to the nearest multiple of `SIMD_NUM_VALUES`.
 template <typename T> usize align_to_simd(usize x) {
     auto byte_len = x * sizeof(T);
     auto aligned_byte_len = (byte_len + (SIMD_ALIGN - 1)) & ~(SIMD_ALIGN - 1);
@@ -158,6 +161,8 @@ Polynomial<double, 2> PreparedLattices::eval(usize granularity, Point<usize> at,
     });
 }
 
+/// For a set of points, check if the polynomial could have a root in the box (of size depending on the granularity of
+/// the check) surrounding each point.
 std::vector<u8> are_points_viable(std::span<Point<usize>> points,
                                   usize granularity,
                                   PreparedLattices& lattices,
@@ -175,6 +180,7 @@ std::vector<u8> are_points_viable(std::span<Point<usize>> points,
         points);
 }
 
+/// For a set of viable points, return the 4 sub-points for each viable point.
 std::vector<Point<usize>> subdivide_viable_points(std::span<Point<usize>> points, std::span<u8> viable) {
     assert(viable.size() == points.size());
     auto result = std::vector<Point<usize>>();

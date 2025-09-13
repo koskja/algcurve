@@ -40,5 +40,8 @@ struct ASTNode {
     std::variant<ASTNodeForkType, ASTNodeVarType, ASTNodeConstType> value;
 };
 
+/// Parse a vector of tokens into an abstract syntax tree.
 std::unique_ptr<ASTNode> parse_tokens(std::vector<Token> tokens);
+
+/// Tokenize a string expression into a vector of tokens.
 std::vector<Token> tokenize(std::string_view expression);

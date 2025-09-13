@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 
+/// Create a user-friendly error message with context from the expression.
 std::string make_error_message(std::string_view expression, size_t pos, const std::string& message) {
     const size_t context_size = 10; // How many characters of context to show on EACH side
     size_t start = (pos > context_size) ? pos - context_size : 0;

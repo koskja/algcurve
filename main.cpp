@@ -31,6 +31,7 @@ usize get_var_index(char c) {
     throw std::runtime_error("Variable not found");
 }
 
+/// Parse an abstract syntax tree into a polynomial.
 template <usize NVARS> HashmapPolynomial<double, NVARS> parse_ast(ASTNodePtrType node) {
     auto result = HashmapPolynomial<double, NVARS>();
     if (node->type == ASTNodeType::Const) {
@@ -69,12 +70,15 @@ template <usize NVARS> HashmapPolynomial<double, NVARS> parse_ast(ASTNodePtrType
     throw std::runtime_error("Invalid AST node type");
 }
 
+/// Parse a string expression into a polynomial.
 template <usize NVARS> HashmapPolynomial<double, NVARS> parse_expression(std::string_view expression) {
     auto tokens = tokenize(expression);
     auto root = parse_tokens(tokens);
     return parse_ast<NVARS>(std::move(root));
 }
 
+/// Calculate a difference metric between two images.
+/// The metric is the number of pixels that are different, normalized by the total number of non-black pixels.
 double image_difference(const Image& left, const Image& right) {
     assert(left.width() == right.width() && left.height() == right.height());
 
@@ -99,6 +103,7 @@ double image_difference(const Image& left, const Image& right) {
     return (double)diff_pixels / (double)total_pixels / 2;
 }
 
+/// Draw a progress bar at the bottom of an image.
 static void draw_progress_bar(Image& img, double lambda) {
     double clamped = std::clamp(lambda, 0.0, 1.0);
     int width = static_cast<int>(img.width());
