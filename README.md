@@ -75,7 +75,31 @@ To uděláme tak, že polynom `p` rozšíříme o proměnné `dx` a `dy` (nic ne
 
 Tento výpočet je proveden jednou, a následně se pro každý bod přímočaře vyhodnotí koeficienty dosazením dx a dy.
 
-### 4.3 Implementace polynomu
+### 4.3 Implementační detaily
+```
+┌─────────────┐   ┌──────────────┐                            
+│             │   │              ├──────────────────────┐     
+│  heaparray  ├──►│  polynomial  │                      │     
+│             │   │              ├────────┐             │     
+└─────────────┘   └───────┬──────┘        │             │     
+                          │               │             │     
+                          ▼               ▼             ▼     
+┌─────────┐       ┌──────────┐       ┌─────────┐   ┌─────────┐
+│         │       │          │       │         │   │         │
+│  image  ├──────►│  render  │◄──────┤  paper  │   │  input  │
+│         │       │          │       │         │   │         │
+└─────────┘       └──┬───────┘       └─────────┘   └────┬────┘
+                     │    ▲                             │     
+                     │    │          ┌──────────┐       │     
+┌────────┐◄──────────┘    └──────────┤          │       │     
+│        │                           │  thread  │       │     
+│  main  │◄──────────────────────────┤          │       │     
+│        │                           └──────────┘       │     
+└────────┘◄─────────────────────────────────────────────┘     
+```
+#### 4.3.1 Zarovnané úložiště, `core.hpp, SimdHeapArray`
+Třída `SimdHeapArray` reprezentuje pole fixní velikosti konzervativně zarovnané pro použítí instukcí SIMD. Zarovnané alokace fungují jinak na Windows, což vyžaduje čarování s makry.
+#### 4.3.2 Reprezentace polynomu, `polynomial.hpp`
 
 Polynom s koeficienty typu `T` v `NVARS` proměnných je reprezentován třemi vzájemně zaměnitelnými kontejnery a tenkou obálkou `Polynomial<T, NVARS>` sjednocující jejich rozhraní.
 
@@ -86,6 +110,32 @@ Polynom s koeficienty typu `T` v `NVARS` proměnných je reprezentován třemi v
 - `DenseOssifiedPolynomial`: hustá immutable reprezentace. Má fixní stupně jednotlivých proměnných. Optimalizované vyhodnocení pro případ `NVARS == 2`.
 
 - `Polynomial`: `std::variant` obálka sjednocující rozhraní. Funkce nepodporované aktuální variantou jsou vyřešeny převodem na `HashmapPolynomial`.
+
+#### 4.3.3 Reprezentace obrázku, `image.hpp`
+Program produkuje bitmapy s přednastavenou paletou, jeden pixel je reprezentován jako jeden byte. Třída `Image` používá hustou reprezentaci obrázku, ačkoliv pro čtvercový obrázek velikosti `n` jednorozměrná křivka zabere pouze `O(n)` pixelů.
+
+#### 4.3.4 Multithreading, `thread.hpp`
+Každé vlákno má přiřazené, kolik pracujících vláken smí spustit. Když se zavolá `parallel_for` s méně jednotkami práce, než je dostupných vláken, "přebytečná" vlákna se rozdělí nově vzniklým vláknům. To se typicky děje při renderování malého množství obrázků v jendom batchi, kde poté dojde k paralelizaci kontroly kořenů.
+
+#### 4.3.5 Vstup, `input.hpp`
+Jednoduchý parser vstupu. Provede tokenizaci, převede seznam tokenů na AST a ten následně vyhodnotí na polynom. Tokeny ukládají, kde se ve vstupním textu nacházejí, což umožňuje generovat základní chybové zprávy.
+
+#### 4.3.6 Algoritmus, `paper.hpp`
+Zde jsou implementovány algoritmy pro možnou existenci kořene kolem počátku ze článku An accurate algorithm for rasterizing algebraic curves. Proces offsettingu je odložen do `render.cpp`.
+
+#### 4.3.7 Rasterizace, `render.hpp`
+Rasterizace je řízená dvojicí funkcí `render_image` a `render_images`. Pro rychlé vyhodnocování posunutého polynomu `p(x-dx, y-dy)` se připraví tabulky mocnin souřadnic mřížky do struktury `PreparedLattices`. Každá granularita má vlastní pravidelnou mřížku bodů se středem v každé buňce. Šířka obrázku musí být mocninou dvou, aby mřížka přesně seděla na pixely.
+
+`render_image` implementuje dělení a ověřování kandidátních buněk: z počátečního bodu na granularitě 0 se opakovaně zavolá test možného kořene (`may_have_root`) nad boxem kolem bodu, a „průchozí“ body se rozdělí na čtyři podbody (`subdivide_viable_points`). "Poloměr" boxu `δ` je polovina šířky buňky. Smyčka končí při dosažení granularitě odpovídající rozlišení (`log2(width)`), kdy každý zbývající bod odpovídá jednomu pixelu, jenž se obarví na `WHITE`.
+
+`render_images` vyrenderuje sadu snímků pro zadané hodnoty `λ`. Každý snímek je reprezentován polynomem `p = lerp(λ, p1, p2)`. Ten se nejprve převede na posunutelnou reprezentaci `OffsetPolynomial` přes `to_offset_polynomial`, a následně se zavolá `render_image` s předpočítanými mřížkami.
+
+#### 4.3.8 Jádro, `main.cpp`
+`main` koordinuje celý běh. Načte dva výrazy ze standardního vstupu, parsne je na `HashmapPolynomial<double,2>` a z jejich stupně odvodí parametry pro `PreparedLattices`.
+
+Pro adaptivní volbu klíčových snímků se nejdřív vyrenderují okrajové hodnoty `t=0` a `t=1` a uloží do mapy `interpolation_steps: t → Image`. Následně program udržuje frontu intervalů `[l, r]`, pro každý spočítá metrikou `image_difference(l, r)` rozdíl obrázků (paralelně), a pokud je nad prahem `max_distance`, vloží střed `mid` a rozdělí interval. Všechny nově vzniklé středy `mid` se vyrenderují v batchích přes `render_images` a doplní do mapy. Smyčka končí, když žádný interval nepřekračuje práh.
+
+Po konvergenci se do každého snímku doplní progress bar (podle parametru `t`), připraví se dopředná i zpětná sekvence s krátkou pauzou na koncích (`num_end_reps`) a snímky se uloží jako `intermediate_images/zzz%04d.bmp` (paralelně). Pokud je v systému dostupné `ffmpeg`, vytvoří se z nich `output_video.mp4`; v opačném případě program ponechá BMP soubory a uživatele informuje. Dočasné soubory se po úspěchu uklidí. 
 
 ### 4.4 Tok dat
 - String → List tokenů → AST → `HashmapPolynomial` - `input.cpp, tokenize, parse_tokens`, `main.cpp, parse_ast`
