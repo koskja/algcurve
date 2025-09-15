@@ -102,3 +102,9 @@ Některé parametry programu jsou zafixované při kompilaci.
 - `max_distance = 0.1` (práh pro dělení intervalů)
 - `num_end_reps = 12` (počet duplikovaných koncových snímků kvůli pauze)
 - Video: `ffmpeg -framerate 30 -c:v libx264 -pix_fmt yuv420p -crf 23`.
+
+## 7. Rekapitulace
+Na myšlenku renderování algebraických křivek jsem přišel při čtení úvodní sekce knihy [A guide to plane algebraic curves](https://agorism.dev/book/math/curve/guide-to-plane-algebraic-curves_keith-kendig.pdf). Zde využitý článek nabídl snadné řešení problému rasterizace, ale algoritmus pro práci se singulárními body se ukázal být náročnější, než jsem čekal, a nezvládl jsem ho správně implementovat. 
+Myšlenka videa přechodu také pochází z knihy o křivkách, a poskytla zajímavý problém ukládání snímků obrázků na renderování - program dokáže vygenerovat obří množství dat (což se dá vyřešit řídkým kódováním obrázků), které je i pomalé uložit na disk, což mě nečekaně zavedlo k RLE kódování bitmap.
+Taky jsem si znovu připomněl krásy C++ konstruktorů a memory managementu, a neplánovaný vývoj softwaru na 3 různých platformách mě dovedl k prvnímu použití CMake. Nebylo to tak hrozné, jak jsem slyšel.
+Celkově jsem se na práci s C++ moc netěšil, ale i paralelizace se ukázala být s použitím jednoduchého paralelního foru zvládnutelná. ASan, UBSan a debugger byly nedocenitelné nástroje.
